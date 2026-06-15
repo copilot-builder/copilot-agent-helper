@@ -1,0 +1,1410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Microsoft Copilot Agent Optimizer</title>
+<meta name="description" content="Clean up Microsoft 365 Copilot agent instructions: trim filler, flag reference data for knowledge files, and stay under the 8,000-character limit. Runs entirely in your browser.">
+<meta property="og:title" content="Microsoft Copilot Agent Optimizer">
+<meta property="og:description" content="Paste your agent instructions; get a slimmer, sourced rewrite that stays under the 8,000-character limit.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Microsoft Copilot Agent Optimizer">
+<meta name="twitter:description" content="Paste your agent instructions; get a slimmer, sourced rewrite that stays under the 8,000-character limit.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%23115ea3'/><rect x='3.5' y='4' width='9' height='1.4' rx='.7' fill='white'/><rect x='3.5' y='7.3' width='6.5' height='1.4' rx='.7' fill='white'/><rect x='3.5' y='10.6' width='8' height='1.4' rx='.7' fill='white'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cascadia+Code:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#fbfaf8; --surface:#fbfaf8; --surface-2:#f2f0ea; --inset:#ece9e1;
+    --border:#e6e2da; --border-2:#dcd7cc;
+    --ink:#1f1d1a; --ink-2:#5f5b53; --ink-3:#7d7869;
+    --accent:#115ea3;
+    --v-delete:#b3382c; --v-tighten:#94701a; --v-kb:#115ea3; --v-mixed:#75705f; --v-keep:#3a7d44;
+    /* Text-on-tint variants: darkened to clear 4.5:1 on the 11–14% light-mode tints.
+       The base --v-* colors stay for glyphs/backgrounds (3:1 graphics threshold). */
+    --vt-delete:#8e2a20; --vt-tighten:#6f5410; --vt-kb:#0d4a82; --vt-mixed:#5c5849; --vt-keep:#2c5f36;
+    --shadow-sm:none;
+    --shadow-md:none;
+    --r-card:0px; --r-md:8px; --r-sm:6px;
+    --sans:"Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,sans-serif;
+    --mono:"Cascadia Code","Cascadia Mono",ui-monospace,Menlo,monospace;
+  }
+  /* Dark palette is applied via [data-theme="dark"] on <html>, set by the header
+     toggle (Auto / Light / Dark). In Auto, a tiny inline script resolves to the OS
+     setting and keeps it in sync. Single source of truth — no duplicated token block. */
+  :root[data-theme="dark"]{
+    --bg:#181715; --surface:#181715; --surface-2:#23211e; --inset:#2a2823;
+    --border:#33312c; --border-2:#3e3b34;
+    --ink:#ece9e4; --ink-2:#aaa698; --ink-3:#8a8574;
+    --accent:#6cb2f7;
+    --v-delete:#e08a7c; --v-tighten:#cba245; --v-kb:#6cb2f7; --v-mixed:#928d7c; --v-keep:#7fb787;
+    /* Dark tints sit on the dark surface, where the base colors already pass 4.5:1. */
+    --vt-delete:var(--v-delete); --vt-tighten:var(--v-tighten); --vt-kb:var(--v-kb); --vt-mixed:var(--v-mixed); --vt-keep:var(--v-keep);
+    --shadow-sm:none;
+    --shadow-md:none;
+  }
+  /* color-mix(...,var(--surface)) hardcodes light backgrounds; rebase those tints onto surface in dark mode */
+  [data-theme="dark"] .tieropt:has(input:checked){background:color-mix(in srgb,var(--accent) 14%,var(--surface))}
+  [data-theme="dark"] .notice.over{background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
+  [data-theme="dark"] .ohint--warn{background:color-mix(in srgb,var(--v-tighten) 12%,var(--surface))}
+  [data-theme="dark"] .sumline .pct{background:color-mix(in srgb,var(--v-keep) 20%,var(--surface))}
+  [data-theme="dark"] .sumline .pct--bad{background:color-mix(in srgb,var(--accent) 18%,var(--surface))}
+  [data-theme="dark"] .rep--delete .vcol__row{background:color-mix(in srgb,var(--v-delete) 18%,var(--surface))}
+  [data-theme="dark"] .rep--tighten .vcol__row{background:color-mix(in srgb,var(--v-tighten) 18%,var(--surface))}
+  [data-theme="dark"] .rep--kb .vcol__row,[data-theme="dark"] .rep--kbblocked .vcol__row{background:color-mix(in srgb,var(--v-kb) 18%,var(--surface))}
+  [data-theme="dark"] .rep--mixed .vcol__row{background:color-mix(in srgb,var(--v-mixed) 18%,var(--surface))}
+  [data-theme="dark"] .rep--keep .vcol__row{background:color-mix(in srgb,var(--v-keep) 18%,var(--surface))}
+  [data-theme="dark"] .budget.zone-over .budget__note,[data-theme="dark"] .budget.zone-ok .budget__zone{color:var(--zc)}
+  [data-theme="dark"] .budget.zone-ok{--zc:var(--v-keep)}
+  /* --ink flips to near-white in dark mode; without these the primary button is white-on-white.
+     :not(.btn--ghost) keeps the override from out-specifying the ghost variant's own colors. */
+  [data-theme="dark"] .btn:not(.btn--ghost){color:#181715}
+  [data-theme="dark"] .btn:not(.btn--ghost):hover{background:#d6d2c8;border-color:#d6d2c8}
+  [data-theme="dark"] .tcard__val code,[data-theme="dark"] .notice li,[data-theme="dark"] .nextsteps code,[data-theme="dark"] .tcard__alias b{color:var(--ink-2)}
+
+  /* theme toggle — single quiet icon button, no label */
+  .themetoggle{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;color:var(--ink-3);background:transparent;border:1px solid var(--border-2);border-radius:50%;cursor:pointer;padding:0;transition:border-color .15s,color .15s}
+  .themetoggle:hover{border-color:var(--ink-3);color:var(--ink)}
+  .themetoggle:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 13%,transparent)}
+  .themetoggle svg{width:16px;height:16px;flex:none}
+
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+    html{scroll-behavior:auto}
+  }
+  /* Windows High Contrast strips author backgrounds; keep the checked radio dot visible */
+  @media (forced-colors:active){
+    .tieropt input:checked::after{background:SelectedItem;forced-color-adjust:none}
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14.5px;line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .mono{font-family:var(--mono)} .tnum{font-variant-numeric:tabular-nums}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+  .page{max-width:980px;margin:0 auto;padding:40px 28px 60px}
+
+  /* header */
+  .topbar{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:16px}
+  .brand{display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+  .brand__name{margin:0;font-size:18px;font-weight:600;letter-spacing:-.01em}
+  .brand__tag{margin:0;font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3)}
+  .intro{font-size:14.5px;line-height:1.55;color:var(--ink-2);margin:0 0 24px;max-width:74ch}
+  .intro b{color:var(--ink);font-weight:600}
+
+  /* section cards */
+  .block{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--shadow-md);padding:24px 26px;margin-top:16px}
+  h2.seclabel,h3.seclabel{font-weight:inherit}
+  .seclabel{display:flex;align-items:center;gap:10px;margin:0 0 18px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+  .seclabel b{color:var(--ink);font-weight:700}
+  .seclabel span{color:var(--ink-3)}
+  .seclabel::after{content:"";flex:1;height:1px;background:var(--border)}
+
+  /* input */
+  textarea#input{width:100%;display:block;font-family:var(--mono);font-size:12.5px;line-height:1.6;color:var(--ink);background:var(--surface-2);border:1px solid var(--border-2);border-radius:var(--r-md);padding:16px 18px;resize:vertical;min-height:230px;transition:border-color .15s,box-shadow .15s}
+  textarea#input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 13%,transparent)}
+  textarea#input::placeholder{color:var(--ink-3)}
+
+  /* tier */
+  .tier{margin-top:20px;border:0;padding:0;margin-inline:0;min-inline-size:0}
+  .tier__label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:11px;padding:0}
+  .tier__opts{display:flex;flex-direction:column;gap:8px}
+  .tieropt{display:flex;gap:12px;align-items:center;padding:12px 15px;border:1px solid var(--border-2);border-radius:var(--r-md);background:var(--surface);cursor:pointer;transition:border-color .15s,background .15s}
+  .tieropt:hover{border-color:var(--ink-3)}
+  .tieropt:has(input:checked){border-color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,var(--surface))}
+  .tieropt:has(input:focus-visible){border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 13%,transparent)}
+  .tieropt input{appearance:none;-webkit-appearance:none;width:17px;height:17px;border:1.5px solid var(--border-2);border-radius:50%;position:relative;flex:none;margin:0;cursor:pointer;transition:border-color .15s}
+  .tieropt input:checked{border-color:var(--accent)}
+  .tieropt input:checked::after{content:"";position:absolute;top:50%;left:50%;width:6px;height:6px;border-radius:50%;background:var(--accent);transform:translate(-50%,-50%)}
+  .tieropt span{font-size:13.5px;color:var(--ink-2)}
+  .tieropt b{color:var(--ink);font-weight:600}
+  .tieropt__name{min-width:106px;flex:none}
+  .tieropt__summary{flex:1;font-size:12.5px;line-height:1.4;color:var(--ink-3)}
+  .tieropt__summary b{color:var(--ink-2);font-weight:500}
+  .tier__sub{display:block;font-family:var(--sans);font-size:12px;line-height:1.45;color:var(--ink-3);letter-spacing:normal;text-transform:none;font-weight:400;margin-top:4px;margin-bottom:11px;max-width:62ch}
+  .tier__sub b{color:var(--ink);font-weight:600}
+  /* tier comparison expander */
+  details.tier-compare{margin-top:14px}
+  details.tier-compare summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);display:flex;align-items:center;gap:9px;padding:6px 0}
+  details.tier-compare summary::-webkit-details-marker{display:none}
+  details.tier-compare summary::before{content:"+" / "";color:var(--ink-3)}
+  details.tier-compare[open] summary::before{content:"\2212" / ""}
+  .tier-compare__body{padding:14px 0 6px}
+  .tier-compare__grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:760px){.tier-compare__grid{grid-template-columns:1fr;gap:10px}}
+  .tcard{display:flex;flex-direction:column;background:var(--surface-2);border:1px solid var(--border-2);border-radius:var(--r-md);padding:14px 15px}
+  .tcard__name{margin:0;font-size:14px;font-weight:600;color:var(--ink)}
+  .tcard__alias{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--ink-3);margin:3px 0 11px;line-height:1.4}
+  .tcard__alias b{color:var(--ink-2);font-weight:500}
+  .tcard__row{display:flex;flex-direction:column;gap:3px;padding:8px 0;border-top:1px solid var(--border)}
+  .tcard__row:first-of-type{border-top:0;padding-top:0}
+  .tcard__label{font-family:var(--mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+  .tcard__val{font-size:12.5px;line-height:1.45;color:var(--ink-2)}
+  .tcard__val code{font-family:var(--mono);font-size:11.5px;background:var(--inset);border-radius:4px;padding:1px 5px;color:var(--ink-2)}
+  .tcard__cta{margin-top:auto;padding-top:12px;border-top:1px solid var(--border)}
+  .tcard__cta a{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:500;color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent);padding-bottom:1px}
+  .tcard__cta a:hover{border-bottom-color:var(--accent)}
+  .tcard__cta--top{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--ink-3);font-style:italic}
+  .tier-compare__more{font-size:12.5px;color:var(--ink-3);margin:14px 0 0}
+  .tier-compare__more a{color:var(--ink-2);text-decoration:underline;text-underline-offset:2px}
+  .tier-compare__more a:hover{color:var(--ink)}
+
+  /* buttons */
+  .run{display:flex;gap:9px;flex-wrap:wrap;margin-top:20px}
+  .btn{font-family:var(--sans);font-size:13.5px;font-weight:600;cursor:pointer;border-radius:var(--r-sm);padding:10px 18px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);box-shadow:var(--shadow-sm);transition:transform .05s ease,background .15s,border-color .15s,color .15s}
+  .btn:hover{background:#3a362f;border-color:#3a362f}
+  .btn:active{transform:translateY(.5px)}
+  .btn--ghost{background:var(--surface);color:var(--ink-2);border-color:var(--border-2);box-shadow:none;font-weight:500}
+  .btn--ghost:hover{background:var(--surface-2);color:var(--ink);border-color:var(--ink-3)}
+
+  /* budget */
+  .budget{margin-top:14px}
+  .budget.zone-empty{--zc:var(--ink-3)} .budget.zone-ok{--zc:#2e6b3c} .budget.zone-over{--zc:var(--accent)}
+  .budget.zone-empty .budget__tail{display:none}
+  .budget__row{display:flex;justify-content:space-between;align-items:baseline;gap:14px;font-family:var(--mono);font-size:11px;letter-spacing:.03em;color:var(--ink-3);margin-bottom:8px}
+  .budget__count{color:var(--ink);font-weight:500}
+  .budget__zone{color:var(--zc);font-weight:500;text-transform:uppercase;letter-spacing:.07em}
+  .budget__limit{color:var(--ink-3)}
+  .track{position:relative;height:8px;background:var(--inset);border-radius:99px;overflow:hidden}
+  .fill{display:block;height:100%;width:0%;background:var(--zc);border-radius:99px}
+  .budget__note{font-size:13px;line-height:1.45;color:var(--ink-2);margin:10px 0 0;max-width:78ch;text-wrap:pretty}
+  .budget.zone-over .budget__note{color:var(--zc)}
+  .budget.zone-empty .budget__note{color:var(--ink-3)}
+
+  .results{display:none;scroll-margin-top:18px}.results.show{display:block}
+  .results:focus{outline:none} /* receives programmatic focus only (first analyze) */
+
+  /* notice */
+  .notice{border:1px solid var(--border-2);border-radius:var(--r-md);background:var(--surface-2);padding:14px 16px;margin-bottom:20px;font-size:13px;line-height:1.5;color:var(--ink-2)}
+  .notice.over{border-color:color-mix(in srgb,var(--accent) 38%,var(--border-2));background:color-mix(in srgb,var(--accent) 4%,var(--surface))}
+  .notice--input{margin:14px 0 0;max-width:560px}
+  .notice.notice--warn{border-color:color-mix(in srgb,var(--v-delete) 50%,var(--border-2));background:color-mix(in srgb,var(--v-delete) 12%,var(--surface))}
+  .notice.notice--warn strong{color:var(--v-delete)}
+  [data-theme="dark"] .notice.notice--warn{background:color-mix(in srgb,var(--v-delete) 20%,var(--surface))}
+  #overBudget .notice,#negativeNotice .notice{margin-top:14px}
+  .notice strong{display:block;color:var(--ink);font-weight:600;margin-bottom:4px}
+  .notice ol{margin:8px 0 0;padding-left:18px}.notice li{margin-bottom:4px;font-family:var(--mono);font-size:11.5px;color:var(--ink-2)}
+
+  /* warn-style output hint (for the XPIA caveat in the KB panel) */
+  .ohint--warn{border:1px solid color-mix(in srgb,var(--v-tighten) 30%,var(--border-2));background:color-mix(in srgb,var(--v-tighten) 5%,var(--surface));border-radius:var(--r-sm);padding:10px 13px;margin-top:8px}
+  .ohint--warn strong{color:var(--ink);font-weight:600}
+  .ohint--warn em{color:var(--ink-2);font-style:italic}
+
+  /* summary */
+  .sumline{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;color:var(--ink-3);margin-bottom:20px}
+  .sumline .before{text-decoration:line-through}
+  .sumline .after{font-size:23px;font-weight:600;color:var(--ink);letter-spacing:-.01em}
+  .sumline .pct{color:var(--vt-keep);background:color-mix(in srgb,var(--v-keep) 11%,var(--surface));border-radius:6px;padding:2px 8px;font-weight:500}
+  .sumline .pct--flat{color:var(--ink-2);background:var(--inset)}
+  .sumline .pct--bad{color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--surface))}
+  .trow--advisory{border-radius:0;border-bottom:1px solid var(--border);margin-top:2px}
+  .tally{display:flex;flex-direction:column;gap:1px}
+  .trow{display:grid;grid-template-columns:24px 30px 184px 1fr;gap:14px;align-items:center;padding:10px 8px;border-radius:8px;transition:background .12s}
+  .trow[role="button"]{cursor:pointer}
+  .trow[role="button"]:hover{background:var(--surface-2)}
+  .trow.zero{pointer-events:none}
+  .trow__g{font-family:var(--mono);font-size:17px;line-height:1;text-align:center;font-weight:600}
+  .trow__name{font-family:var(--mono);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink);font-weight:500}
+  .trow__note{font-size:13px;color:var(--ink-3)}
+  .trow__ct{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:14px;color:var(--ink);font-weight:600;text-align:right}
+  .trow.zero{opacity:.4}
+  .g-delete{color:var(--v-delete)}.g-tighten,.g-advisory{color:var(--v-tighten)}.g-kb{color:var(--v-kb)}.g-mixed{color:var(--v-mixed)}.g-keep{color:var(--v-keep)}
+  .trow__g.g-mixed{font-size:14px}
+  .rep--mixed .vcol__g{font-size:10.5px}
+  .sen--mixed .sen__g{font-size:15px}
+
+  /* per-line breakdown toggle — the core evidence, styled as a real control */
+  details.chunks-toggle{margin-top:18px}
+  details.chunks-toggle>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:13px;border:1px solid color-mix(in srgb,var(--accent) 45%,var(--border-2));border-radius:var(--r-md);background:color-mix(in srgb,var(--accent) 6%,var(--surface));padding:15px 18px;transition:border-color .15s,background .15s}
+  details.chunks-toggle>summary::-webkit-details-marker{display:none}
+  details.chunks-toggle>summary:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 11%,var(--surface))}
+  details.chunks-toggle>summary::before{content:"+" / "";color:var(--accent);font-size:17px;font-weight:600;line-height:1}
+  details.chunks-toggle[open]>summary::before{content:"\2212" / ""}
+  .chunks-toggle__text{display:flex;flex-direction:column;gap:3px}
+  #chunksSummary{font-family:var(--mono);font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink);font-weight:600}
+  .chunks-toggle__sub{font-size:12.5px;color:var(--ink-2)}
+
+  /* reports */
+  .reports{display:flex;flex-direction:column;margin-top:24px}
+  .rep{display:grid;grid-template-columns:210px 1fr;gap:24px;padding:20px 0;border-top:1px solid var(--border);scroll-margin-top:14px}
+  .reasons li{scroll-margin-top:14px}
+  @media(max-width:640px){
+    .rep{grid-template-columns:1fr;gap:12px}
+    .trow{grid-template-columns:24px 30px 1fr;row-gap:2px}
+    .trow__note{grid-column:3/4;grid-row:2}
+  }
+  .reports .rep:first-child{border-top:0;padding-top:4px}
+  .vcol__row{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:7px;margin-bottom:10px;font-family:var(--mono)}
+  .rep--delete .vcol__row{background:color-mix(in srgb,var(--v-delete) 12%,var(--surface));color:var(--vt-delete)}
+  .rep--tighten .vcol__row{background:color-mix(in srgb,var(--v-tighten) 14%,var(--surface));color:var(--vt-tighten)}
+  .rep--kb .vcol__row{background:color-mix(in srgb,var(--v-kb) 11%,var(--surface));color:var(--vt-kb)}
+  .rep--mixed .vcol__row{background:color-mix(in srgb,var(--v-mixed) 11%,var(--surface));color:var(--vt-mixed)}
+  .rep--keep .vcol__row{background:color-mix(in srgb,var(--v-keep) 11%,var(--surface));color:var(--vt-keep)}
+  .rep--kbblocked .vcol__row{background:color-mix(in srgb,var(--v-kb) 11%,var(--surface));color:var(--vt-kb)}
+  .vcol__g{font-weight:600;font-size:12px}
+  .vcol__w{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;font-weight:600}
+  .vcol__m{display:block;font-family:var(--mono);font-size:10.5px;color:var(--ink-3);padding-left:2px}
+  .bcol{min-width:0}
+  .ctext{font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--ink);margin:0;white-space:pre-wrap;word-wrap:break-word;background:var(--inset);border-radius:var(--r-sm);padding:13px 15px}
+  .rep--delete .ctext{color:var(--ink-3);text-decoration:line-through;text-decoration-color:var(--border-2)}
+  .reasons{margin:12px 0 0;padding:0;list-style:none}
+  .reasons li{padding:3px 0;font-size:13px;line-height:1.5;color:var(--ink-2)}
+  .reason__tag{display:inline-block;font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);border:1px solid var(--border-2);border-radius:4px;padding:1px 6px;margin-right:7px;vertical-align:1px;cursor:help}
+  .reasons.clean li{color:var(--ink-3)}
+
+  /* split */
+  .sentences{display:flex;flex-direction:column}
+  .sen{display:grid;grid-template-columns:22px 1fr;gap:11px;padding:9px 0;border-bottom:1px solid var(--border);align-items:start}
+  .sen:last-child{border-bottom:0}
+  .sen__g{font-family:var(--mono);font-weight:600;font-size:18px;line-height:1;text-align:center;padding-top:10px}
+  .sen--delete .sen__g{color:var(--v-delete)}.sen--tighten .sen__g{color:var(--v-tighten)}.sen--keep .sen__g{color:var(--v-keep)}.sen--kb .sen__g{color:var(--v-kb)}
+  .sen__text{display:block;font-family:var(--mono);font-size:12px;line-height:1.55;color:var(--ink);background:var(--inset);border-radius:var(--r-sm);padding:10px 13px;white-space:pre-wrap;word-wrap:break-word}
+  .sen--delete .sen__text{text-decoration:line-through;text-decoration-color:var(--border-2);color:var(--ink-3)}
+
+  /* outputs */
+  .outputs{display:flex;flex-direction:column;gap:26px}
+  .output{border:1px solid var(--ink-3);border-radius:var(--r-md);padding:18px 20px}
+  .ohead{display:flex;align-items:center;gap:12px;margin-bottom:11px}
+  .ohead h3{font-size:15px;font-weight:600;margin:0}
+  .ostat{flex:1;font-family:var(--mono);font-size:10.5px;letter-spacing:.02em;color:var(--ink-3)}
+  .otext{width:100%;display:block;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--ink);background:var(--surface-2);border:1px solid var(--border-2);border-radius:var(--r-md);padding:14px 16px;resize:vertical;min-height:190px;white-space:pre-wrap;transition:border-color .15s,box-shadow .15s}
+  .otext:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 13%,transparent)}
+  .ohint{font-size:13px;line-height:1.5;color:var(--ink-2);margin:11px 0 0;max-width:84ch}
+  .nextsteps{margin-top:16px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:15px 17px}
+  .nextsteps__h{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 9px}
+  .nextsteps ol{margin:0;padding-left:20px}
+  .nextsteps li{font-size:13px;color:var(--ink-2);line-height:1.5;margin-bottom:6px;padding-left:3px}
+  .nextsteps li:last-child{margin-bottom:0}
+  .nextsteps strong{color:var(--ink);font-weight:600}
+  .nextsteps code{font-family:var(--mono);font-size:11.5px;background:var(--inset);border-radius:5px;padding:1px 6px}
+  .nextsteps a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+
+  /* scope */
+  details.scope{margin-top:6px}
+  details.scope summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);display:flex;align-items:center;gap:9px;padding:6px 0}
+  details.scope summary::-webkit-details-marker{display:none}
+  details.scope summary::before{content:"+" / "";color:var(--ink-3)}
+  details.scope[open] summary::before{content:"\2212" / ""}
+  .scope__body{display:grid;grid-template-columns:1fr 1fr;gap:30px;padding:16px 0 4px}
+  @media(max-width:680px){.scope__body{grid-template-columns:1fr;gap:20px}}
+  .scope__body h4{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin:0 0 9px;font-weight:500}
+  .scope__body ul{margin:0;padding:0;list-style:none}
+  .scope__body li{font-size:13px;color:var(--ink-2);line-height:1.5;padding:3px 0 3px 16px;position:relative}
+  .scope__body li::before{content:"";position:absolute;left:4px;top:9px;width:5px;height:5px;border-radius:50%;background:var(--ink-3)}
+  .scope__tier{grid-column:1/-1;font-size:12.5px;color:var(--ink-3);line-height:1.55;border-top:1px solid var(--border);padding-top:14px;margin-top:2px}
+  .scope__tier b{color:var(--ink-2);font-weight:600}
+
+  footer.disclaimer{margin-top:26px;font-size:11.5px;color:var(--ink-3);line-height:1.6;max-width:none;text-align:center;margin-left:auto;margin-right:auto;text-wrap:balance}
+  .info{position:relative;display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;border:1px solid var(--ink-3);color:var(--ink-3);font-size:9.5px;font-weight:600;font-style:normal;font-family:var(--sans);line-height:1;cursor:help;flex:none;margin-left:auto}
+  .info::before{content:"";position:absolute;inset:-5px;border-radius:50%} /* 25px hit area, visual stays 15px */
+  .info:hover{border-color:var(--ink);color:var(--ink)}
+  .info:focus{outline:none}
+  .info:focus-visible{border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 13%,transparent)}
+  .edu{margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--shadow-md);overflow:hidden}
+  .edu__head{margin:0;padding:18px 24px 8px;font-weight:600;font-size:14px;color:var(--ink)}
+  .edu__body{padding:2px 24px 22px;font-size:13.5px;line-height:1.6;color:var(--ink-2);max-width:80ch}
+  .edu__body p{margin:0 0 11px}
+  .edu__body a,.sources a{color:var(--accent);text-decoration:underline;text-underline-offset:2px;text-decoration-color:color-mix(in srgb,var(--accent) 40%,transparent)}
+  .edu__body a:hover,.sources a:hover{text-decoration-color:var(--accent)}
+  .edu__body blockquote{margin:0 0 11px;padding:10px 14px;border-left:3px solid var(--accent);background:var(--surface-2);border-radius:0 var(--r-sm) var(--r-sm) 0;color:var(--ink);font-style:italic}
+  .edu__body em{font-style:italic;color:var(--ink)}
+  .sources{padding:14px 0 4px}
+  .sources ul{margin:0;padding-left:18px}
+  .sources li{font-size:13px;color:var(--ink-2);line-height:1.55;margin-bottom:7px}
+
+  /* ---- Editorial skin overrides (option D) ---- */
+  body{font-size:15px}
+  .page{padding:56px 36px 72px}
+  .brand__name{font-size:23px;font-weight:650;letter-spacing:-.02em}
+  .intro{font-size:16px;line-height:1.6;margin-bottom:30px}
+  .block{background:transparent;border:none;border-top:1px solid var(--border);border-radius:0;padding:26px 0 12px;margin-top:24px}
+  .seclabel{gap:14px;margin:0 0 20px;text-transform:none;letter-spacing:0}
+  .seclabel b{font-family:var(--sans);font-size:30px;font-weight:200;color:var(--ink-3);line-height:1}
+  .seclabel span{font-family:var(--sans);font-size:16px;font-weight:600;color:var(--ink);letter-spacing:-.01em}
+  .seclabel::after{display:none}
+  .edu{background:transparent;border:none;border-top:1px solid var(--border);border-radius:0;box-shadow:none;margin-top:24px;overflow:visible}
+  .edu__head{padding:24px 0 8px;font-size:15px}
+  .edu__body{padding:2px 0 24px}
+  textarea#input,.otext{background:var(--surface-2);border-color:transparent}
+  .tieropt{background:var(--surface-2);border-color:transparent}
+  .tieropt:hover{border-color:var(--border-2)}
+  .tcard,.nextsteps,.notice{border-color:transparent}
+  .notice.over{border-color:color-mix(in srgb,var(--accent) 38%,transparent)}
+  .btn--ghost{background:transparent}
+  .btn--ghost:hover{background:var(--surface-2)}
+
+  /* ---- Paste-first layout (r14) ---- */
+  .block--input{border-top:0;padding-top:4px;margin-top:10px}
+  textarea#input{min-height:260px;font-size:13px}
+  .run{align-items:center}
+  .tier--row{border:0;border-top:1px solid var(--border);padding:18px 0 0;margin:18px 0 0;min-inline-size:0}
+  .tier__q{margin:0;font-family:var(--sans);font-size:14px;font-weight:600;color:var(--ink);letter-spacing:-.01em}
+  .tier__qsub{margin:3px 0 0;font-family:var(--sans);font-size:12px;color:var(--ink-3);line-height:1.45}
+  .tier__opts.tier__opts--inline{flex-direction:row;flex-wrap:wrap;gap:18px;margin-top:12px}
+  .tieropt.tieropt--inline{display:inline-flex;align-items:center;gap:7px;padding:0;border:0;background:transparent;cursor:pointer}
+  .tieropt.tieropt--inline:hover{border:0;background:transparent}
+  .tieropt.tieropt--inline:has(input:checked){border:0;background:transparent}
+  .tieropt--inline input{width:16px;height:16px}
+  .tieropt--inline .tieropt__name{min-width:0}
+  .tieropt--inline .tieropt__name b{font-weight:500;color:var(--ink-2)}
+  .tieropt--inline:has(input:checked) .tieropt__name b{color:var(--ink);font-weight:600}
+  .tieropt--inline .info{flex:none}
+  .privacy-note{font-size:12px;color:var(--ink-3);margin:16px 0 0}
+</style>
+<script>
+  /* Resolve theme before first paint to avoid a flash. Stored value is
+     'light' or 'dark'; if unset, follow the OS. Persistence works on GitHub
+     Pages / file://; harmless no-op if storage is blocked. */
+  (function(){
+    var t;
+    try { t = localStorage.getItem('cao-theme'); } catch(e){}
+    if (t !== 'light' && t !== 'dark') {
+      t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+</head>
+<body>
+<div class="page">
+
+  <header class="topbar">
+    <div class="brand">
+      <h1 class="brand__name">Microsoft Copilot Agent Optimizer</h1>
+    </div>
+    <button id="themeToggle" class="themetoggle" type="button" onclick="toggleTheme()" aria-label="Switch to dark theme">
+      <span id="themeIcon" aria-hidden="true"></span>
+    </button>
+  </header>
+  <main>
+  <div class="block block--input">
+    <textarea id="input" aria-label="Agent instructions" placeholder="Paste the full text of your agent's instructions here. Microsoft caps them at 8,000 characters, and this tool helps you use as few words as possible. Every line gets sorted into Behavioral, Knowledge, Redundant, or Vague. Lines that fall into more than one of these categories are flagged Mixed, and lines it leaves for you to judge are flagged Advisory. You get back a streamlined version in Markdown format, which helps the agent follow your instructions more reliably. The Knowledge content moves into a separate knowledge file you can attach to the agent."></textarea>
+
+    <div class="budget zone-empty" id="budget">
+      <div class="budget__row">
+        <span class="budget__lead">CHARACTERS <span id="charLabel" class="budget__count tnum">0</span><span class="budget__tail"> <b style="color:var(--ink-3);font-weight:400">·</b> <span id="zoneName" class="budget__zone">Under the limit</span></span></span>
+        <span id="charLimit" class="budget__limit tnum">/ 8,000</span>
+      </div>
+      <div class="track"><span id="budgetFill" class="fill"></span></div>
+      <p id="zoneNote" class="budget__note" aria-live="polite"></p>
+    </div>
+
+    <fieldset class="tier tier--row">
+      <legend class="sr-only">Which Microsoft Copilot subscription do you have?</legend>
+      <p class="tier__q" aria-hidden="true">Which Microsoft Copilot subscription do you have?</p>
+      <p class="tier__qsub">Your subscription level changes what the tool recommends.</p>
+      <div class="tier__opts tier__opts--inline">
+          <label class="tieropt tieropt--inline"><input type="radio" name="tier" value="basic" checked onchange="setTier(this.value)" aria-label="Basic"><span class="tieropt__name"><b>Basic</b></span></label>
+          <label class="tieropt tieropt--inline"><input type="radio" name="tier" value="premium" onchange="setTier(this.value)" aria-label="Premium or Copilot Studio"><span class="tieropt__name"><b>Premium or Copilot Studio</b></span></label>
+      </div>
+    </fieldset>
+
+    <details class="tier-compare">
+        <summary>Not sure which one you have?</summary>
+        <div class="tier-compare__body">
+          <div class="tier-compare__grid">
+            <div class="tcard">
+              <h3 class="tcard__name">Basic</h3>
+              <span class="tcard__alias">Microsoft calls this: <b>Microsoft 365 Copilot Chat</b></span>
+              <div class="tcard__row"><span class="tcard__label">Agents can search</span><span class="tcard__val">Web only.</span></div>
+              <div class="tcard__row"><span class="tcard__label">Knowledge files</span><span class="tcard__val">Not supported. There's nowhere to upload one, so reference content stays in the instructions.</span></div>
+              <div class="tcard__cta"><a href="https://www.microsoft.com/en-gb/microsoft-365-copilot/chat" target="_blank" rel="noopener">Learn more about Basic &rarr;<span class="sr-only"> (opens in new tab)</span></a></div>
+            </div>
+            <div class="tcard">
+              <h3 class="tcard__name">Premium</h3>
+              <span class="tcard__alias">Microsoft calls this: <b>Microsoft 365 Copilot</b></span>
+              <div class="tcard__row"><span class="tcard__label">Agents can search</span><span class="tcard__val">The web, plus anything in your Microsoft environment that you have access to (e.g., SharePoint, Outlook, Microsoft Teams, OneDrive).</span></div>
+              <div class="tcard__row"><span class="tcard__label">Knowledge files</span><span class="tcard__val">Supported. You can add a separate knowledge file, including the one this tool produces.</span></div>
+              <div class="tcard__cta"><a href="https://www.microsoft.com/en-gb/microsoft-365-copilot/enterprise" target="_blank" rel="noopener">Learn more about Premium &rarr;<span class="sr-only"> (opens in new tab)</span></a></div>
+            </div>
+            <div class="tcard">
+              <h3 class="tcard__name">Copilot Studio</h3>
+              <span class="tcard__alias">Microsoft calls this: <b>Microsoft Copilot Studio</b></span>
+              <div class="tcard__row"><span class="tcard__label">Agents can search</span><span class="tcard__val">The web, your Microsoft environment, custom APIs, the full Power Platform connector ecosystem, and external systems (e.g., Salesforce, Quickbase, ServiceNow, SAP).</span></div>
+              <div class="tcard__row"><span class="tcard__label">Knowledge files</span><span class="tcard__val">Supported, plus APIs and external connectors.</span></div>
+              <div class="tcard__cta"><a href="https://www.microsoft.com/en-gb/microsoft-365-copilot/microsoft-copilot-studio" target="_blank" rel="noopener">Learn more about Copilot Studio &rarr;<span class="sr-only"> (opens in new tab)</span></a></div>
+            </div>
+          </div>
+          <p class="tier-compare__more">Still need more detail? See <a href="https://learn.microsoft.com/en-us/microsoft-365/copilot/which-copilot-for-your-organization" target="_blank" rel="noopener">Microsoft's full comparison &rarr;<span class="sr-only"> (opens in new tab)</span></a></p>
+        </div>
+      </details>
+
+    <div class="run">
+      <button class="btn" onclick="analyze()">Analyze</button>
+      <button class="btn btn--ghost" onclick="loadExample()">Load example</button>
+      <button class="btn btn--ghost" onclick="clearAll()">Clear</button>
+    </div>
+
+    <div id="inputNotice" aria-live="polite"></div>
+  </div>
+
+  <!-- Short spoken summary for screen readers; the results region itself is NOT live
+       (announcing the whole re-rendered diagnosis would be an unintelligible wall). -->
+  <div id="statusMsg" class="sr-only" role="status"></div>
+  <div id="results" class="results" role="region" aria-label="Analysis results" tabindex="-1">
+
+    <div class="block">
+      <h2 class="seclabel"><span>Diagnosis</span></h2>
+      <div id="summary"></div>
+      <div id="overBudget"></div>
+      <div id="negativeNotice"></div>
+      <details class="chunks-toggle">
+        <summary>
+          <span class="chunks-toggle__text">
+            <span id="chunksSummary">Click to review the line-by-line breakdown</span>
+            <span class="chunks-toggle__sub">See exactly why each line was sorted, and what to do about it.</span>
+          </span>
+        </summary>
+        <div id="chunks" class="reports"></div>
+      </details>
+    </div>
+
+    <div class="block">
+      <h2 class="seclabel"><span>Outputs</span></h2>
+      <div class="outputs">
+        <div class="output">
+          <div class="ohead">
+            <h3 id="cleanedHead">Streamlined instructions</h3>
+            <span class="ostat" id="cleanedStat"></span>
+            <button class="btn btn--ghost" id="cleanedDownloadBtn" onclick="downloadOutput('cleaned')">Download</button>
+            <button class="btn btn--ghost" id="cleanedBtn" aria-live="polite" onclick="copyOutput('cleaned')">Copy</button>
+          </div>
+          <textarea id="cleanedOutput" class="otext" readonly aria-labelledby="cleanedHead" placeholder="The slimmer Instructions field appears here after Analyze runs."></textarea>
+          <p id="movedNote" class="ohint" style="display:none" aria-live="polite"></p>
+          <div class="nextsteps">
+            <p class="nextsteps__h">What to do with this</p>
+            <ol id="cleanedSteps"></ol>
+          </div>
+        </div>
+        <div class="output" id="kbPanel">
+          <div class="ohead">
+            <h3 id="kbHead">Knowledge file</h3>
+            <span class="ostat" id="kbStat"></span>
+            <button class="btn btn--ghost" id="kbDownloadBtn" onclick="downloadOutput('kb')">Download</button>
+            <button class="btn btn--ghost" id="kbBtn" aria-live="polite" onclick="copyOutput('kb')">Copy</button>
+          </div>
+          <p id="kbEmpty" class="ohint" style="display:none">Nothing in your instructions is reference-shaped — no knowledge file needed. Rules and workflow steps belong in the Instructions field, and that's where yours are.</p>
+          <div id="kbBody">
+            <textarea id="kbOutput" class="otext" readonly aria-labelledby="kbHead" placeholder="Anything flagged to move appears here, grouped by topic, ready to save as a knowledge file."></textarea>
+            <div class="nextsteps">
+              <p class="nextsteps__h">What to do with this</p>
+              <ol id="kbSteps"></ol>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <details class="scope">
+        <summary>Sources</summary>
+        <div class="sources">
+          <ul>
+            <li>Microsoft Learn · <a href="https://learn.microsoft.com/en-us/microsoft-copilot-studio/guidance/generative-mode-guidance" target="_blank" rel="noopener">"Configure high-quality instructions for generative orchestration"<span class="sr-only"> (opens in new tab)</span></a></li>
+            <li>Microsoft Learn · <a href="https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/knowledge-sources" target="_blank" rel="noopener">"Add knowledge sources to your declarative agent"<span class="sr-only"> (opens in new tab)</span></a></li>
+            <li>Microsoft Learn · <a href="https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/declarative-agent-instructions" target="_blank" rel="noopener">"Write effective instructions for declarative agents"<span class="sr-only"> (opens in new tab)</span></a></li>
+            <li>Microsoft Learn · <a href="https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/agent-builder-build-agents" target="_blank" rel="noopener">"Build agents with Agent Builder in Microsoft 365 Copilot"<span class="sr-only"> (opens in new tab)</span></a></li>
+          </ul>
+        </div>
+      </details>
+    </div>
+
+  </div>
+  </main>
+
+  <footer class="disclaimer">
+    Nothing you paste is uploaded or saved. Not affiliated with Microsoft. Microsoft, Copilot, and Copilot Studio are trademarks of Microsoft Corporation.
+  </footer>
+</div>
+
+<script>
+/* ---- Tunable constants ---- */
+const HARD_LIMIT = 8000;
+const NEGATIVE_THRESHOLD = 5;
+
+let currentTier = 'basic';
+const TIER_INFO = {
+  'basic':   { kb: false },
+  'premium': { kb: true },
+};
+function tierHasKb() { return !!(TIER_INFO[currentTier] && TIER_INFO[currentTier].kb); }
+
+// Respect the user's reduced-motion preference for JS-driven scrolling
+// (the CSS media query only governs CSS scroll-behavior, not scrollIntoView).
+const PREFERS_REDUCED_MOTION = window.matchMedia &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function scrollToEl(el, block) {
+  if (!el) return;
+  el.scrollIntoView({ behavior: PREFERS_REDUCED_MOTION ? 'auto' : 'smooth', block: block || 'start' });
+}
+
+/* ---- Theme toggle: light ⇄ dark, defaults to OS on first load ---- */
+const SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/></svg>';
+const MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4 6.2 6.2 0 0 0 20 14.5z"/></svg>';
+
+let theme;
+try { theme = localStorage.getItem('cao-theme'); } catch (e) {}
+if (theme !== 'light' && theme !== 'dark') {
+  theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+}
+
+function applyTheme() {
+  document.documentElement.setAttribute('data-theme', theme);
+  const icon = document.getElementById('themeIcon');
+  const btn = document.getElementById('themeToggle');
+  // Show the icon of the mode you'd switch TO, with a matching label.
+  if (icon) icon.innerHTML = theme === 'dark' ? SUN : MOON;
+  if (btn) btn.setAttribute('aria-label', theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+}
+
+function toggleTheme() {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem('cao-theme', theme); } catch (e) {}
+  applyTheme();
+}
+
+const GLYPH = { delete: '●', tighten: '●', kb: '●', mixed: '◐', keep: '●' };
+const GLYPH_ADVISORY = '○';
+const VERDICT_LABELS = { delete: 'Delete', tighten: 'Tighten', kb: 'Move', keep: 'Keep', mixed: 'Mixed' };
+
+const TONE = "helpful|friendly|polite|professional|knowledgeable|courteous|kind|nice|caring|empathetic|sympathetic|supportive|compassionate|understanding|patient|attentive|thoughtful|warm|reassuring|respectful|approachable|trustworthy|accurate|clear|concise|thorough|honest";
+
+const DELETE_PATTERNS = [
+  { rx: new RegExp(`\\byou are (a |an )?(${TONE})\\b`, 'i'),
+    why: "Default model behavior. The agent is already this." },
+  { rx: new RegExp(`\\bstrive to be (${TONE})\\b`, 'i'),
+    why: "Default behavior. The model already strives for this." },
+  { rx: new RegExp(`\\b(always|never) (be|try to be|strive to be|remember to be) (${TONE})\\b`, 'i'),
+    why: "Default behavior. Already does this." },
+  { rx: new RegExp(`^\\s*(be|being|stay) (${TONE})\\b`, 'i'),
+    why: "Default behavior. Already does this." },
+  { rx: new RegExp(`\\b(maintain|keep) (a |an )?(${TONE})( tone| attitude| demeanor| approach| manner| voice)?\\b`, 'i'),
+    why: "Default tone. The model already does this." },
+  { rx: new RegExp(`\\bshow (empathy|compassion|kindness|patience|understanding|care)\\b`, 'i'),
+    why: "Default behavior. The model already does this." },
+  { rx: new RegExp(`\\bin a (${TONE}) (manner|way|tone)\\b`, 'i'),
+    why: "Default tone. Already does this." },
+  { rx: new RegExp(`\\b(respond|answer|reply) (in|with) a (${TONE}) (way|tone|manner)\\b`, 'i'),
+    why: "Default behavior." },
+  { rx: /\bremember that the user is (important|valued|a person|human)\b/i,
+    why: "Sentiment without behavior change. Cut it." },
+  { rx: /\bthe user'?s (time is valuable|needs come first|feelings matter)\b/i,
+    why: "Sentiment without behavior change. Cut it." },
+  { rx: /\byou are designed to\b/i,            why: "Descriptive opener. Cut it and start with the rule." },
+  { rx: /\byour purpose is\b/i,                 why: "Descriptive opener. Cut it." },
+  { rx: /\byour role is\b/i,                    why: "Descriptive opener. Cut it." },
+  { rx: /\byou were (built|made|created) to\b/i, why: "Descriptive opener. Cut it." },
+];
+
+const TIGHTEN_PATTERNS = [
+  { rx: /^\s*(CRITICAL|IMPORTANT|NOTE|WARNING|REMEMBER|CAUTION|PRO TIP|TIP):\s*/i, why: "Severity prefix. The model doesn't escalate on shouting. Cut it." },
+  { rx: /\bplease (always|remember to|make sure to|be sure to|do not forget to)\b/i, why: "Drop 'please' and the softener. Command the agent, don't ask." },
+  { rx: /\bplease\b/i, why: "Drop 'please'. Give a command." },
+  { rx: /\bremember to\b/i, why: "Drop 'remember to'. State the rule." },
+  { rx: /\bit is (very |extremely |really |so )?important (that you|to)\b/i, why: m => `Drop "${m[0].trim()}". State the rule directly.` },
+  { rx: /\bit'?s (very |extremely |really |so )?important (that you|to)\b/i, why: m => `Drop "${m[0].trim()}". State the rule directly.` },
+  { rx: /\bin order to\b/i, why: "'in order to' becomes 'to'." },
+  { rx: /\bmake sure (to|that you)\b/i, why: "'make sure to' becomes a direct command." },
+  { rx: /\btry to\b/i, why: "Drop 'try to'. The agent already tries." },
+  { rx: /\bif possible\b/i, why: "'if possible' is vague. Specify when, or cut.", advisory: true },
+  { rx: /\bwhen (appropriate|relevant)\b/i, why: "'when appropriate' is vague. Specify when.", advisory: true },
+  { rx: /\bif (relevant|applicable|needed)\b/i, why: "'if relevant' is vague. Specify when.", advisory: true },
+  { rx: /\bas needed\b/i, why: "'as needed' is vague. Specify when.", advisory: true },
+  { rx: /\bwhenever possible\b/i, why: "'whenever possible' is vague. Specify when.", advisory: true },
+  { rx: /\bto the best of your (ability|knowledge)\b/i, why: "Default behavior. Implied, cut it." },
+  { rx: /\b(always|never) forget to\b/i, why: "Drop 'always/never forget to'. State the rule." },
+];
+
+// Role opener that carries a real purpose tail ("...designed to help families find childcare").
+// The persona is filler, but the purpose is scope — salvage it instead of deleting the sentence.
+const PURPOSE_OPENER_RX = /(\byou (are|were) (a |an )?[^.!?]{0,80}?\b(designed|built|made|created|intended|meant) to|\byour (purpose|role|job) is to)\s+\S/i;
+
+// Flag-only: usually default behavior, but a reasonable explicit keep in high-stakes domains.
+const KEEP_ADVISORY_PATTERNS = [
+  { rx: /\b(do not|don'?t|never) (hallucinate|make (up|things up|information up)|make up\b|invent (facts|information|details)|fabricate)/i,
+    why: "Models avoid making things up by default, so this is usually safe to cut — but in a high-stakes domain an explicit no-fabrication rule is reasonable to keep. Your call.", advisory: true },
+];
+
+const RATIONALE_PATTERNS = [
+  { rx: /\bdepends on\b/i,                                      why: "This sentence explains why, not what the agent should do. Cut unless removing it would change the agent's behavior.", advisory: true },
+  { rx: /\bensures? (that )?\b/i,                               why: "This sentence describes an effect ('ensures X'), not an action. Cut unless removing it would change the agent's behavior.", advisory: true },
+  { rx: /\bso (that )?(families|users|people|the user|customers|members) can\b/i, why: "This sentence names a goal, not a rule. Cut unless the goal would change the agent's behavior.", advisory: true },
+  { rx: /\b(the |a )reason (is|that|why)\b/i,                   why: "This sentence is explicit reasoning, not a rule. Cut unless the reason would change the agent's behavior.", advisory: true },
+  { rx: /\bthis (is important|matters) because\b/i,             why: "This sentence is meta-commentary on importance, not a rule. Cut unless the reason would change the agent's behavior.", advisory: true },
+  { rx: /\bto ensure (that )?\b/i,                              why: "This sentence is a justification clause ('to ensure X'), not an action. Cut unless removing it would change the agent's behavior.", advisory: true },
+];
+
+const MODAL_RX = /\b(must|should|shall|never|always|only|refuse|avoid|require[sd]?|do not|don'?t|confirm|verify|include|flag|display|recommend|request|ask)\b/i;
+const CONDITIONAL_RX = /\b(if|when|before|after|unless|until|while)\b/i;
+
+function isDirective(text) {
+  const t = text.trim();
+  if (MODAL_RX.test(t)) return true;
+  return /^(verify|confirm|include|flag|display|recommend|refuse|request|tell|list|state|provide|ensure|use|add|check|ask|do not|don'?t|always|never|only)\b/i.test(t);
+}
+
+function sentenceCount(text) {
+  const m = text.match(/[.!?](\s|$)/g);
+  return m ? m.length : (text.trim() ? 1 : 0);
+}
+
+const URLISH = /https?:\/\/|\bwww\.[\w.-]+|[\w.+-]+@[\w-]+\.[\w.-]+|\b\d{3}[-.)\s]\s?\d{3}[-.\s]\d{4}\b/;
+
+function isLikelyFactList(chunk) {
+  const lines = chunk.split(/\n/).map(l => l.trim()).filter(Boolean);
+  const bulletLines = lines.filter(l => /^([-*•·▪]|\d+\.|\(\d+\))\s+/.test(l));
+  if (bulletLines.length < 3) return false;
+  let dataish = 0;
+  for (const l of bulletLines) {
+    if (URLISH.test(l)
+        || /\b\d/.test(l)
+        || /\b(19|20)\d{2}\b/.test(l)
+        || /[A-Z][a-z]+ [A-Z][a-z]+/.test(l)
+        || /\$\d/.test(l)
+        || /\d+%/.test(l)) {
+      dataish++;
+    }
+  }
+  return dataish >= Math.ceil(bulletLines.length / 2);
+}
+
+function looksLikeReferenceProse(chunk) {
+  if (chunk.split(/\n/).length > 1) return false;
+  if (chunk.length < 250) return false;
+  const numbers   = (chunk.match(/\b\d+(\.\d+)?%?\b/g) || []).length;
+  const dollars   = (chunk.match(/\$\d/g) || []).length;
+  const years     = (chunk.match(/\b(19|20)\d{2}\b/g) || []).length;
+  const properPairs = (chunk.match(/\b[A-Z][a-z]+ [A-Z][a-z]+/g) || []).length;
+  const acronyms  = (chunk.match(/\b[A-Z]{3,}\b/g) || []).length;
+  const dataScore = numbers + dollars * 2 + years * 2 + properPairs * 0.5 + acronyms;
+  const modals       = (chunk.match(/\b(must|should|never|always|only|refuse|avoid|require|verify|confirm|do not|don'?t)\b/gi) || []).length;
+  const conditionals = (chunk.match(/\b(if|when|before|after|unless|until)\b/gi) || []).length;
+  const ruleScore = modals * 2 + conditionals;
+  return dataScore >= 4 && dataScore > ruleScore;
+}
+
+function splitChunks(text) {
+  // Split on blank lines first (well-formatted input). Then segment each block so
+  // that rules separated by single newlines become their own chunks, while bulleted
+  // reference lists stay grouped (optionally with a "Heading:" line directly above
+  // them). Without this, a paste that uses single line breaks instead of blank lines
+  // collapses into one giant block and gets dumped wholesale to the knowledge file.
+  const isBullet = l => /^([-*•·▪]|\d+\.|\(\d+\))\s+/.test(l.trim());
+  const out = [];
+  for (const block of text.split(/\n\s*\n/)) {
+    const lines = block.split('\n').filter(l => l.trim() !== '');
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const next = lines[i + 1];
+      const headerOfList = /:\s*$/.test(line.trim()) && next && isBullet(next);
+      if (isBullet(line) || headerOfList) {
+        const group = [line];
+        i++;
+        while (i < lines.length && isBullet(lines[i])) { group.push(lines[i]); i++; }
+        out.push(group.join('\n').replace(/^\s+|\s+$/g, ''));
+      } else {
+        out.push(line.replace(/^\s+|\s+$/g, ''));
+        i++;
+      }
+    }
+  }
+  return out.filter(Boolean);
+}
+
+function splitSentences(text) {
+  const parts = text.split(/(?<=[.!?])\s+(?=[A-Z"'])/);
+  return parts.map(p => p.trim()).filter(Boolean);
+}
+
+function jaccardSimilarity(a, b) {
+  const wa = new Set(a.toLowerCase().match(/[a-z][a-z']+/g) || []);
+  const wb = new Set(b.toLowerCase().match(/[a-z][a-z']+/g) || []);
+  if (wa.size === 0 || wb.size === 0) return 0;
+  let inter = 0;
+  for (const w of wa) if (wb.has(w)) inter++;
+  return inter / (wa.size + wb.size - inter);
+}
+
+function whyOf(p, m) {
+  return typeof p.why === 'function' ? p.why(m) : p.why;
+}
+
+function dedupeReasons(reasons, verdict) {
+  // When the action is delete, tighten sub-advice is moot — drop it.
+  const filtered = verdict === 'delete' ? reasons.filter(r => r.kind === 'delete') : reasons;
+  // Dedup by first sentence (so "Default behavior. X" and "Default behavior. Y" collapse).
+  const seen = new Set();
+  return filtered.filter(r => {
+    const key = r.text.split('.')[0].trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function analyzeSentence(s) {
+  const reasons = [];
+  let verdict = 'keep';
+  const purposeful = PURPOSE_OPENER_RX.test(s);
+  if (purposeful) {
+    verdict = 'tighten';
+    reasons.push({ kind: 'tighten', text: "Role opener with the agent's job buried inside. The persona is filler, but the purpose is real scope — keep it as a direct mission statement." });
+  }
+  if (!purposeful) for (const p of DELETE_PATTERNS) {
+    const m = s.match(p.rx);
+    if (m) { verdict = 'delete'; reasons.push({ kind: 'delete', text: whyOf(p, m), advisory: !!p.advisory }); }
+  }
+  for (const p of KEEP_ADVISORY_PATTERNS) {
+    const m = s.match(p.rx);
+    if (m) reasons.push({ kind: 'keep', text: whyOf(p, m), advisory: true });
+  }
+  for (const p of TIGHTEN_PATTERNS) {
+    const m = s.match(p.rx);
+    if (m) { if (verdict !== 'delete') verdict = 'tighten'; reasons.push({ kind: 'tighten', text: whyOf(p, m), advisory: !!p.advisory }); }
+  }
+  for (const p of RATIONALE_PATTERNS) {
+    const m = s.match(p.rx);
+    if (m) { if (verdict !== 'delete') verdict = 'tighten'; reasons.push({ kind: 'tighten', text: whyOf(p, m), advisory: !!p.advisory }); }
+  }
+  return { text: s, verdict, reasons: dedupeReasons(reasons, verdict) };
+}
+
+function kbVerdict(reasonText, basicAdvice) {
+  if (!tierHasKb()) {
+    return {
+      verdict: 'tighten',
+      kbBlocked: true,
+      sentences: null,
+      reasons: [{ kind: 'tighten', text: basicAdvice || "This is reference data that doesn't belong in instructions, but Basic can't move it to a knowledge file. If it's public, cut it and let the agent web-search for it when asked. If it's private to your organization, the agent can't look it up, so keep only the essentials here. A lot of private reference data is the case for upgrading to Premium.", advisory: true }]
+    };
+  }
+  return { verdict: 'kb', sentences: null, reasons: [{ kind: 'kb', text: reasonText }] };
+}
+
+function analyzeChunk(chunk, idx, allChunks) {
+  if (isLikelyFactList(chunk)) {
+    return kbVerdict(
+      "Bulleted list of data-shaped items (numbers, URLs, contact info, proper nouns). Better suited to the knowledge base.",
+      "This is a list of reference data (URLs, contacts, codes). Basic can't move it to a knowledge file, so what to do depends on the data. If it's public, cut it and let the agent web-search for items when asked. If it's private to your organization, the agent can't look it up, so keep only the entries your users actually need here. A lot of private reference data is the case for upgrading to Premium, where it attaches as a knowledge file and stops counting against your characters."
+    );
+  }
+  if (looksLikeReferenceProse(chunk)) {
+    return kbVerdict(
+      "Long paragraph with specific numbers and dates. Looks like reference data. Consider moving it to the knowledge base.",
+      "This reads like reference data (definitions, facts, specifics). Basic can't move it to a knowledge file, so what to do depends on the data. If it's public, cut it and let the agent web-search or ask the user on demand. If it's private to your organization, the agent can't look it up, so condense it to the essentials here. A lot of private reference data is the case for upgrading to Premium."
+    );
+  }
+
+  if (chunk.includes('\n')) {
+    // Per-line analysis. The old code matched the whole block against the rule
+    // sets and assigned ONE verdict, so a single filler line (e.g. a role opener)
+    // could flip the entire block to Delete and drop every other rule in it.
+    // Reuse the sentence machinery line-by-line and let disagreement → Mixed,
+    // exactly as the single-paragraph path does.
+    const analyzed = chunk.split('\n').map(line =>
+      line.trim()
+        ? analyzeSentence(line)
+        : { text: line, verdict: 'keep', reasons: [], blank: true }
+    );
+    const real = analyzed.filter(a => !a.blank);
+    const verdicts = new Set(real.map(a => a.verdict));
+    const verdict = verdicts.size <= 1 ? (real.length ? [...verdicts][0] : 'keep') : 'mixed';
+    const reasons = [];
+    if (verdict !== 'mixed') {
+      const seen = new Set();
+      for (const a of analyzed) for (const r of a.reasons) {
+        if (!seen.has(r.text)) { seen.add(r.text); reasons.push(r); }
+      }
+    }
+    return { verdict, sentences: analyzed, lineMode: true, reasons: dedupeReasons(reasons, verdict) };
+  }
+
+  const sentences = splitSentences(chunk).map(analyzeSentence);
+
+  for (let i = 1; i < sentences.length; i++) {
+    const cur = sentences[i];
+    if (cur.verdict !== 'keep') continue;
+    if (MODAL_RX.test(cur.text) || CONDITIONAL_RX.test(cur.text)) continue;
+    if (isDirective(sentences[i - 1].text)) {
+      cur.verdict = 'tighten';
+      cur.reasons.push({ kind: 'tighten', text: "This sentence follows a rule but states no action of its own — likely just an explanation. Cut if it only explains why.", advisory: true });
+    }
+  }
+
+  const verdicts = new Set(sentences.map(s => s.verdict));
+  let chunkVerdict;
+  if (verdicts.size === 1) {
+    chunkVerdict = [...verdicts][0];
+  } else {
+    // Any disagreement among sentence verdicts → Mixed
+    chunkVerdict = 'mixed';
+  }
+
+  const sc = sentenceCount(chunk);
+  const lengthFlag = (chunk.length > 350 && sc > 3) ? {
+    kind: 'tighten',
+    text: `Paragraph runs ${chunk.length} characters across ${sc} sentences. Break it into bullets or split it.`,
+    advisory: true
+  } : null;
+
+  let dupFlag = null;
+  for (let j = 0; j < idx; j++) {
+    const sim = jaccardSimilarity(chunk, allChunks[j]);
+    if (sim > 0.55 && chunk.length > 30) {
+      dupFlag = { kind: 'tighten', text: `Near-duplicate of part ${j + 1} (${Math.round(sim * 100)}% word overlap). Merge them.`, advisory: true };
+      break;
+    }
+  }
+
+  const chunkReasons = [];
+  // (Removed: copying sentence reasons up into chunkReasons. It double-counted
+  // advisory flags in the summary tally — analyze() already counts both
+  // r.reasons and r.sentences[].reasons — and the gray-box render path that
+  // would have shown them is only reached for uniform-keep-no-reason chunks,
+  // where this list is empty anyway. Per-sentence reasons still render via
+  // shouldRenderBySentence.)
+  if (lengthFlag) chunkReasons.push(lengthFlag);
+  if (dupFlag) chunkReasons.push(dupFlag);
+  if ((lengthFlag || dupFlag) && chunkVerdict === 'keep') chunkVerdict = 'tighten';
+
+  return { verdict: chunkVerdict, sentences, reasons: chunkReasons };
+}
+
+const TIGHTEN_REWRITES = [
+  { rx: /(\byou (are|were) (a |an )?[^.!?]{0,80}?\b(designed|built|made|created|intended|meant) to|\byour (purpose|role|job) is to)\s+/gi, replace: '' },
+  { rx: /^\s*(CRITICAL|IMPORTANT|NOTE|WARNING|REMEMBER|CAUTION|PRO TIP|TIP):\s*/i, replace: '' },
+  { rx: /\bplease (always|remember to|make sure to|be sure to|do not forget to)\s+/gi, replace: '' },
+  { rx: /\bplease\s+/gi, replace: '' },
+  { rx: /\bremember to\s+/gi, replace: '' },
+  { rx: /\bit is (very |extremely |really |so )?important (that you|to)\s+/gi, replace: '' },
+  { rx: /\bit'?s (very |extremely |really |so )?important (that you|to)\s+/gi, replace: '' },
+  { rx: /\bin order to\b/gi, replace: 'to' },
+  { rx: /\bmake sure (to|that you)\s+/gi, replace: '' },
+  { rx: /\btry to\s+/gi, replace: '' },
+  { rx: /\s*to the best of your (ability|knowledge)\s*/gi, replace: ' ' },
+  { rx: /\b(always|never) forget to\b/gi, replace: '$1' },
+];
+
+function tidyText(s) {
+  return s
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.!?,;:])/g, '$1')
+    .trim()
+    .replace(/(^|[.!?]\s+)([a-z])/g, (m, p1, p2) => p1 + p2.toUpperCase());
+}
+
+function applyTightens(text) {
+  let out = text;
+  for (const r of TIGHTEN_REWRITES) out = out.replace(r.rx, r.replace);
+  return tidyText(out);
+}
+
+function topicOf(chunk) {
+  const colonMatch = chunk.match(/^([^:.\n]{3,80}):/);
+  if (colonMatch) return colonMatch[1].trim();
+  const firstLine = chunk.split('\n')[0];
+  const words = firstLine.split(/\s+/).slice(0, 6).join(' ');
+  return words.replace(/[.,;]+$/, '');
+}
+
+function rewriteChunk(chunk, result) {
+  if (result.verdict === 'delete') return null;
+  if (result.verdict === 'kb') return `[Moved to knowledge base: ${topicOf(chunk)}]`;
+  if (result.verdict === 'tighten' && result.kbBlocked) return chunk;
+  if ((result.verdict === 'mixed' || result.lineMode) && result.sentences) {
+    // line-mode parts keep their line breaks; sentence-mode parts join with a space.
+    const sep = result.lineMode ? '\n' : ' ';
+    const kept = result.sentences
+      .filter(s => s.verdict !== 'delete')
+      .map(s => {
+        if (s.blank) return '';                       // preserve blank lines in line mode
+        return s.verdict === 'tighten' ? applyTightens(s.text) : s.text;
+      });
+    // trim leading/trailing blanks that a dropped first/last line would leave behind
+    while (kept.length && kept[0] === '') kept.shift();
+    while (kept.length && kept[kept.length - 1] === '') kept.pop();
+    return kept.some(k => k.trim()) ? kept.join(sep) : null;
+  }
+  if (result.verdict === 'tighten') return applyTightens(chunk);
+  return chunk;
+}
+
+// Render one cleaned rule as a Markdown bullet. Multi-line rules (e.g. an inline
+// list kept on Basic) get their continuation lines indented 2 spaces so they stay
+// inside the bullet / nest as a sub-list.
+function toBullet(text) {
+  const lines = text.split('\n');
+  return lines.map((ln, i) => i === 0 ? '- ' + ln : (ln.trim() === '' ? '' : '  ' + ln)).join('\n');
+}
+
+function buildOutputs(chunks, results) {
+  const ruleParts = [];
+  const movedTopics = [];
+  const kbParts = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const r = results[i];
+    if (r.verdict === 'kb') {
+      const topic = topicOf(chunks[i]);
+      movedTopics.push(topic);
+      let body = chunks[i];
+      const lines = body.split('\n');
+      // Drop the first line when the heading already says the same thing.
+      if (lines[0].trim().replace(/:$/, '') === topic) body = lines.slice(1).join('\n').replace(/^\s*\n/, '');
+      kbParts.push(`## ${topic}\n\n${body}`);
+    } else {
+      const rewritten = rewriteChunk(chunks[i], r);
+      if (rewritten) ruleParts.push(rewritten);
+    }
+  }
+  let cleaned = '';
+  if (ruleParts.length) cleaned = '# Instructions\n\n' + ruleParts.map(toBullet).join('\n');
+  // The moved-topics list is surfaced to the builder as a note (#movedNote), NOT baked
+  // into the pasted instructions: the agent grounds on the attached knowledge file
+  // automatically, so a topic index in the instructions just spends characters it
+  // doesn't need.
+  return {
+    cleaned: cleaned,
+    kb: kbParts.join('\n\n---\n\n'),
+    kbCount: kbParts.length,
+    movedTopics: movedTopics
+  };
+}
+
+function cleanedStepStrings(tier) {
+  return [
+    'Read through the streamlined text and make sure it is accurate.',
+    'Click <strong>Copy</strong> above. You can also <strong>Download</strong> a backup copy, in case your agent is ever deleted.',
+    'Select all the existing text in your agent\'s Instructions field and delete it.',
+    'Paste the streamlined text.',
+    'Save the agent.'
+  ];
+}
+
+function kbStepStrings(tier) {
+  return [
+    'Read through the knowledge file and make sure it is accurate.',
+    'Click <strong>Download</strong> above to save it as <code>agent-knowledge.md</code>, or use <strong>Copy</strong> to paste it into a Word doc.',
+    'Add the file to your agent as a knowledge source (e.g., in OneDrive, SharePoint). <a href="https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/knowledge-sources" target="_blank" rel="noopener">Microsoft\'s guide shows where &rarr;<span class="sr-only"> (opens in new tab)</span></a>',
+    'Save the agent.'
+  ];
+}
+
+function copyOutput(which) {
+  const id = which === 'cleaned' ? 'cleanedOutput' : 'kbOutput';
+  const btnId = which === 'cleaned' ? 'cleanedBtn' : 'kbBtn';
+  const el = document.getElementById(id);
+  if (!el.value) return;
+
+  const flash = (text) => {
+    const btn = document.getElementById(btnId);
+    const orig = btn.dataset.label || btn.textContent;
+    btn.dataset.label = orig;
+    btn.textContent = text;
+    setTimeout(() => { btn.textContent = btn.dataset.label; }, 1500);
+  };
+
+  // execCommand fallback for file:// and other non-secure contexts, where
+  // navigator.clipboard is undefined in several browsers.
+  const legacyCopy = () => {
+    const ro = el.hasAttribute('readonly');
+    el.removeAttribute('readonly');
+    el.focus(); el.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    if (ro) el.setAttribute('readonly', '');
+    const sel = window.getSelection && window.getSelection();
+    if (sel) sel.removeAllRanges();
+    flash(ok ? 'Copied' : 'Press Ctrl+C');
+  };
+
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(el.value).then(() => flash('Copied')).catch(legacyCopy);
+  } else {
+    legacyCopy();
+  }
+}
+
+// Save an output straight to disk as a .md (knowledge file, or a backup of the
+// cleaned instructions). Pure client-side Blob download; nothing is uploaded.
+function downloadOutput(which) {
+  const id = which === 'cleaned' ? 'cleanedOutput' : 'kbOutput';
+  const filename = which === 'cleaned' ? 'agent-instructions.md' : 'agent-knowledge.md';
+  const text = document.getElementById(id).value;
+  if (!text) return;
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function reasonsBlock(reasons, extra) {
+  return `<ul class="reasons${extra ? ' ' + extra : ''}">${reasons.map(r => {
+    const tag = r.advisory ? `<span class="reason__tag" title="The tool did not change this in the streamlined output. You decide.">Advisory<span class="sr-only"> — flagged only; the tool did not change this in the streamlined output</span></span> ` : '';
+    return `<li${r.advisory ? ' class="reason--advisory"' : ''}>${tag}${escapeHtml(r.text)}</li>`;
+  }).join('')}</ul>`;
+}
+
+function renderSentence(s) {
+  if (s.blank) return '';   // blank line in a line-mode part — nothing to show
+  let reasonHtml;
+  if (s.reasons.length) {
+    reasonHtml = reasonsBlock(s.reasons);
+  } else if (s.verdict === 'keep') {
+    reasonHtml = reasonsBlock([{ text: 'Reads like a genuine, non-default rule. Keep as written.' }], 'clean');
+  } else {
+    reasonHtml = '';
+  }
+  // Tighten with only advisory reasons → outlined circle (tool flags but won't change).
+  const advisoryOnly = s.verdict === 'tighten' && s.reasons.length > 0 && s.reasons.every(r => r.advisory);
+  const glyph = advisoryOnly ? GLYPH_ADVISORY : GLYPH[s.verdict];
+  return `
+    <div class="sen sen--${s.verdict}${advisoryOnly ? ' sen--advisory' : ''}">
+      <span class="sen__g" aria-hidden="true">${glyph}</span>
+      <div class="sen__main">
+        <span class="sr-only">${advisoryOnly ? 'Advisory — ' : ''}${VERDICT_LABELS[s.verdict]}:</span>
+        <span class="sen__text">${escapeHtml(s.text)}</span>
+        ${reasonHtml}
+      </div>
+    </div>`;
+}
+
+function shouldRenderBySentence(result) {
+  const real = result.sentences ? result.sentences.filter(s => !s.blank) : null;
+  if (!real || real.length < 2) return false;
+  if (result.verdict === 'mixed') return true;
+  // Per-sentence rendering whenever any line has reasons or a non-keep verdict.
+  // Keeps the gray-box chunk view only for genuinely uniform-keep paragraphs.
+  return real.some(s => s.reasons.length > 0 || s.verdict !== 'keep');
+}
+
+function renderChunk(chunk, idx, result) {
+  const labels = VERDICT_LABELS;
+  // Rubric categories (Behavioral / Knowledge / Redundant / Vague) — universal source of truth.
+  // Action verbs (Keep / Move / Delete / Tighten) are the consequence. Mixed has no rubric category.
+  const CATEGORY = { keep: 'Behavioral', tighten: 'Vague', delete: 'Redundant', kb: 'Knowledge', mixed: null };
+  // kbBlocked = reference data rerouted to Tighten on Basic. The category is still Knowledge.
+  const category = result.kbBlocked ? 'Knowledge' : CATEGORY[result.verdict];
+  const fullLabel = category
+    ? `${category} · ${labels[result.verdict]}`
+    : labels[result.verdict];
+
+  const num = String(idx + 1).padStart(2, '0');
+  // Hollow glyph: the tool flags kbBlocked parts but leaves them unchanged in the cleaned output.
+  const pillGlyph = result.kbBlocked ? GLYPH_ADVISORY : GLYPH[result.verdict];
+
+  let body;
+  const renderBySentence = shouldRenderBySentence(result);
+  if (renderBySentence) {
+    body = `<div class="sentences">${result.sentences.map(renderSentence).join('')}</div>`;
+  } else {
+    // Use chunk-level reasons; if none, fall back to the single sentence's own reasons
+    // (a single-sentence delete/tighten part keeps its reason on the sentence, not the chunk).
+    let reasons = result.reasons;
+    if (!reasons.length && result.sentences) reasons = result.sentences.flatMap(s => s.reasons || []);
+    const reasonsHtml = reasons.length
+      ? reasonsBlock(reasons)
+      : (result.verdict === 'keep' ? reasonsBlock([{ text: 'Reads like a genuine, non-default rule. Keep as written.' }], 'clean') : '');
+    // Single-verdict parts use the same inline-dot row as split sentences, so every part lines up.
+    body = `<div class="sentences"><div class="sen sen--${result.verdict}${result.kbBlocked ? ' sen--advisory' : ''}"><span class="sen__g" aria-hidden="true">${pillGlyph}</span><div class="sen__main"><span class="sen__text">${escapeHtml(chunk)}</span>${reasonsHtml}</div></div></div>`;
+  }
+  return `
+    <div class="rep rep--${result.verdict}${result.kbBlocked ? ' rep--kbblocked' : ''}">
+      <div class="vcol">
+        <div class="vcol__row"><span class="vcol__g" aria-hidden="true">${pillGlyph}</span><span class="vcol__w">${fullLabel}</span></div>
+        <span class="vcol__m">PART ${num} · ${chunk.length} CH</span>
+      </div>
+      <div class="bcol">${body}</div>
+    </div>`;
+}
+
+function renderSummary(text, cleanedLen, counts, isFree) {
+  const order = [
+    { k: 'delete',   label: 'Redundant · Delete',         note: 'things the agent already does without being told' },
+    { k: 'tighten',  label: 'Vague · Tighten',            note: 'wordy or unclear; the tool rewrites these' },
+    { k: 'kb',       label: 'Knowledge · Move', note: 'facts the agent can reference' },
+    { k: 'mixed',    label: 'Mixed',                      note: 'parts that need more than one action' },
+    { k: 'keep',     label: 'Behavioral · Keep',          note: 'rules the agent needs to be told' },
+  ];
+  const reduction = text.length > 0 ? Math.round(100 * (1 - cleanedLen / text.length)) : 0;
+  const sign = reduction > 0 ? '−' : reduction < 0 ? '+' : '';
+  const pctClass = reduction > 0 ? 'pct' : reduction < 0 ? 'pct pct--bad' : 'pct pct--flat';
+
+  const rows = order
+    .filter(o => !(isFree && o.k === 'kb'))
+    .map(o => {
+      const zero = counts[o.k] === 0;
+      const click = zero ? '' : ` role="button" tabindex="0" title="Show in the breakdown" onclick="jumpToCategory('${o.k}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();jumpToCategory('${o.k}')}"`;
+      return `
+      <div class="trow ${zero ? 'zero' : ''}"${click}>
+        <span class="trow__g g-${o.k}" aria-hidden="true">${GLYPH[o.k]}</span>
+        <span class="trow__ct tnum">${counts[o.k]}</span>
+        <span class="trow__name">${o.label}</span>
+        <span class="trow__note">${o.note}</span>
+      </div>`;
+    }).join('');
+
+  // Advisory counts individual flags, not parts — it lives outside the part tally.
+  const advisoryPost = counts.advisory > 0
+    ? `<div class="trow trow--advisory" role="button" tabindex="0" title="Show in the breakdown" onclick="jumpToCategory('advisory')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();jumpToCategory('advisory')}">
+        <span class="trow__g g-advisory" aria-hidden="true">${GLYPH_ADVISORY}</span>
+        <span class="trow__ct tnum">${counts.advisory}</span>
+        <span class="trow__name">Advisory</span>
+        <span class="trow__note">left in the streamlined output; you decide</span>
+      </div>`
+    : '';
+
+  return `
+    <div class="sumline">
+      <span class="before tnum">${text.length.toLocaleString()}</span>
+      <span>&rarr;</span>
+      <span class="after tnum">${cleanedLen.toLocaleString()}</span>
+      <span>characters</span>
+      <span class="${pctClass}">${sign}${Math.abs(reduction)}%</span>
+    </div>
+    <div class="tally">${rows}</div>${advisoryPost}`;
+}
+
+function jumpToCategory(k) {
+  const d = document.querySelector('.chunks-toggle');
+  d.open = true;
+  const target = (k === 'advisory'
+    ? document.querySelector('.reason--advisory')
+    : document.querySelector('.rep--' + k)) || d;
+  // Move focus with the scroll so keyboard/SR users land where the view does.
+  target.setAttribute('tabindex', '-1');
+  target.focus({ preventScroll: true });
+  target.scrollIntoView({ behavior: PREFERS_REDUCED_MOTION ? 'auto' : 'smooth', block: 'start' });
+}
+
+function analyze() {
+  const text = document.getElementById('input').value;
+  const inputNotice = document.getElementById('inputNotice');
+  if (!text.trim()) {
+    inputNotice.innerHTML = '<div class="notice notice--input"><strong>Nothing to analyze yet.</strong> Paste your agent\'s instructions in the box above, or click <b>Load example</b> to see how it works.</div>';
+    document.getElementById('input').focus();
+    return;
+  }
+  inputNotice.innerHTML = '';
+  const noKb = !tierHasKb();
+  const chunks = splitChunks(text);
+  // Flattened-paste guard: a long instruction set that arrives as a single block
+  // with effectively no line breaks can't be segmented — bullet lists collapse into
+  // the surrounding prose and reference data can't be told from rules. Warn rather
+  // than silently produce a misleading diagnosis. Analysis still runs (best effort).
+  const newlineCount = (text.match(/\n/g) || []).length;
+  const flattenedPaste = chunks.length === 1 && text.trim().length > 400 && newlineCount <= 1;
+  if (flattenedPaste) {
+    inputNotice.innerHTML = '<div class="notice notice--input notice--warn"><strong>This pasted as one block with no line breaks.</strong> The tool can\'t tell your separate rules apart, so the results below may be off. For an accurate diagnosis, paste again with each rule on its own line.</div>';
+  }
+  const results = chunks.map((c, i) => analyzeChunk(c, i, chunks));
+
+  const counts = { delete: 0, tighten: 0, advisory: 0, kb: 0, keep: 0, mixed: 0 };
+  results.forEach(r => counts[r.verdict]++);
+  // Advisory cross-cuts the chunk verdicts: total count of "flagged but tool won't change" bullets.
+  results.forEach(r => {
+    if (r.reasons) counts.advisory += r.reasons.filter(rs => rs.advisory).length;
+    if (r.sentences) r.sentences.forEach(s => {
+      if (s.reasons) counts.advisory += s.reasons.filter(rs => rs.advisory).length;
+    });
+  });
+
+  const outputs = buildOutputs(chunks, results);
+
+  const negCount = (text.match(/\b(do not|don'?t|never|avoid)\b/gi) || []).length;
+  const nn = document.getElementById('negativeNotice');
+  nn.innerHTML = (negCount >= NEGATIVE_THRESHOLD)
+    ? `<div class="notice"><strong>${negCount} negative rules detected.</strong> Rules phrased as "don't / never / avoid" are often clearer stated positively, as what the agent <em>should</em> do. Worth a pass. Not changed automatically.</div>`
+    : '';
+
+  document.getElementById('summary').innerHTML = renderSummary(text, outputs.cleaned.length, counts, noKb);
+  document.getElementById('chunks').innerHTML = chunks.map((c, i) => renderChunk(c, i, results[i])).join('');
+  document.getElementById('chunksSummary').textContent = `Click to review the line-by-line breakdown · ${chunks.length} part${chunks.length === 1 ? '' : 's'}`;
+
+  document.getElementById('cleanedOutput').value = outputs.cleaned;
+  document.getElementById('kbOutput').value = outputs.kb;
+  const movedNote = document.getElementById('movedNote');
+  if (outputs.movedTopics && outputs.movedTopics.length) {
+    movedNote.textContent = 'Moved out to your knowledge file: ' + outputs.movedTopics.join(', ') + '.';
+    movedNote.style.display = '';
+  } else {
+    movedNote.textContent = '';
+    movedNote.style.display = 'none';
+  }
+  const reduction = text.length > 0 ? Math.round(100 * (1 - outputs.cleaned.length / text.length)) : 0;
+  document.getElementById('cleanedStat').textContent =
+    `${outputs.cleaned.length.toLocaleString()} characters · from ${text.length.toLocaleString()} · −${reduction}%`;
+  const kbEmptyState = outputs.kbCount === 0;
+  document.getElementById('kbStat').textContent = kbEmptyState
+    ? ''
+    : `${outputs.kb.length.toLocaleString()} characters · ${outputs.kbCount} section${outputs.kbCount === 1 ? '' : 's'}`;
+
+  document.getElementById('kbPanel').style.display = noKb ? 'none' : '';
+  document.getElementById('kbBody').style.display = kbEmptyState ? 'none' : '';
+  document.getElementById('kbBtn').style.display = kbEmptyState ? 'none' : '';
+  document.getElementById('kbEmpty').style.display = kbEmptyState ? '' : 'none';
+  document.getElementById('cleanedSteps').innerHTML = cleanedStepStrings(currentTier).map(s => `<li>${s}</li>`).join('');
+  document.getElementById('kbSteps').innerHTML = kbStepStrings(currentTier).map(s => `<li>${s}</li>`).join('');
+
+  const ob = document.getElementById('overBudget');
+  if (outputs.cleaned.length > HARD_LIMIT) {
+    const keeps = chunks
+      .map((c, i) => ({ c, i, len: c.length, v: results[i].verdict }))
+      .filter(x => x.v === 'keep')
+      .sort((a, b) => b.len - a.len)
+      .slice(0, 3);
+    const items = keeps.map(k =>
+      `<li>Part ${k.i + 1} (${k.len} characters): ${escapeHtml(k.c.slice(0, 90))}${k.c.length > 90 ? '…' : ''}</li>`
+    ).join('');
+    ob.innerHTML = `<div class="notice over"><strong>Still over the 8K hard limit after suggested cuts (${outputs.cleaned.length.toLocaleString()} characters).</strong> These survived the rules but are your longest remaining parts. Review them for tightening${noKb ? '' : ' or moving to a knowledge file'}:<ol>${items}</ol></div>`;
+  } else {
+    ob.innerHTML = '';
+  }
+
+  // Spoken summary for screen readers (the results region itself is not live).
+  document.getElementById('statusMsg').textContent =
+    `Analysis complete. ${chunks.length} part${chunks.length === 1 ? '' : 's'}: ` +
+    `${counts.keep} keep, ${counts.tighten} tighten, ${counts.delete} delete, ` +
+    `${counts.kb} move to knowledge base, ${counts.mixed} mixed. ` +
+    `Streamlined output is ${outputs.cleaned.length.toLocaleString()} characters` +
+    (outputs.cleaned.length > HARD_LIMIT ? ', still over the 8,000-character limit.' : '.');
+
+  const res = document.getElementById('results');
+  const firstRun = !res.classList.contains('show');
+  res.classList.add('show');
+  updateBudget();
+  if (flattenedPaste) {
+    // The warning sits just above the results; the normal scroll-to-results would
+    // push it off-screen. Scroll to the warning instead so the user actually sees it.
+    scrollToEl(inputNotice, 'start');
+  } else if (firstRun) {
+    res.focus({ preventScroll: true });
+    scrollToEl(res, 'start');
+  }
+}
+
+const ZONES = {
+  empty: { name: '',                note: '' },
+  ok:    { name: 'Under the limit', note: '' },
+  over:  { name: 'Over hard limit', note: "The agent won't save until you're back under 8,000." },
+};
+
+function updateBudget() {
+  const n = document.getElementById('input').value.length;
+  const zone = n === 0 ? 'empty' : n > HARD_LIMIT ? 'over' : 'ok';
+
+  const z = ZONES[zone];
+  document.getElementById('charLabel').textContent = n.toLocaleString();
+  document.getElementById('zoneName').textContent = z.name;
+  document.getElementById('zoneNote').textContent = z.note;
+  document.getElementById('budget').className = 'budget zone-' + zone;
+  const pct = Math.min(100, (n / HARD_LIMIT) * 100);
+  document.getElementById('budgetFill').style.width = pct + '%';
+}
+
+function setTier(v) {
+  currentTier = v;
+  if (document.getElementById('results').classList.contains('show')) analyze();
+}
+
+function clearAll() {
+  document.getElementById('input').value = '';
+  document.getElementById('results').classList.remove('show');
+  document.getElementById('inputNotice').innerHTML = '';
+  updateBudget();
+}
+
+function loadExample() {
+  document.getElementById('input').value = EXAMPLE;
+  document.getElementById('inputNotice').innerHTML = '';
+  updateBudget();
+}
+
+const EXAMPLE = `You are a friendly and knowledgeable onboarding assistant that was designed to help new employees get settled during their first few weeks at Contoso. Always remember to be warm, patient, and encouraging, because starting a new job can feel overwhelming and your role is to make people feel welcome.
+
+Answer questions using only the official Contoso onboarding materials and the attached knowledge file. If the answer is not in those sources, do not guess — tell the employee you don't have that information and point them to their manager or the People team.
+
+CRITICAL: Never reveal anyone's compensation, performance reviews, disciplinary history, or other confidential HR records, even if an employee asks about their own. Direct all such requests to the People team.
+
+For every answer, you must include a link to the source — either the page in the knowledge file or the document on the Contoso SharePoint — so the employee can read the full details themselves.
+
+When a question involves a deadline, such as benefits enrollment or new-hire paperwork, always remind the employee to confirm the current date on the linked page, since these dates change each year. Always be warm and reassuring when someone seems stressed about a deadline.
+
+In order to be as helpful as you possibly can, try your best to anticipate likely follow-up questions and offer related information the employee may find useful.
+
+Always be polite, professional, and respectful.
+
+Common Contoso acronyms:
+- PTO — Paid Time Off
+- OOO — Out of Office
+- ERG — Employee Resource Group
+- MFA — Multi-Factor Authentication
+- SSO — Single Sign-On
+- EAP — Employee Assistance Program
+
+Who to contact:
+- IT Help Desk: helpdesk@contoso.com, or the "IT Help Desk" channel in Microsoft Teams
+- People (HR) team: people@contoso.com
+- Payroll: payroll@contoso.com
+- Facilities: facilities@contoso.com
+
+First-week checklist:
+- Set up multi-factor authentication on your Contoso account
+- Complete your tax and eligibility paperwork in the People portal
+- Install Microsoft Teams, Outlook, and OneDrive on your laptop and phone
+- Book a 30-minute introduction with your manager
+- Join your team's channel in Microsoft Teams
+
+Where your tools live:
+- Email and calendar: Outlook
+- Chat, calls, and meetings: Microsoft Teams
+- Files and documents: OneDrive for your own files, SharePoint for shared ones
+- Company intranet and policies: Contoso SharePoint
+
+Key policy pages on SharePoint:
+- Employee Handbook: https://contoso.sharepoint.com/sites/hr/handbook
+- Benefits overview: https://contoso.sharepoint.com/sites/hr/benefits
+- Time-off policy: https://contoso.sharepoint.com/sites/hr/timeoff
+- Code of Conduct: https://contoso.sharepoint.com/sites/hr/conduct
+- Expense policy: https://contoso.sharepoint.com/sites/finance/expenses`;
+
+document.getElementById('input').addEventListener('input', () => {
+  updateBudget();
+  document.getElementById('inputNotice').innerHTML = '';
+});
+
+// The info icons sit inside the tier <label>s; without preventDefault a click on
+// the icon selects that tier. Instead, open the comparison expander below.
+const tierCompare = document.querySelector('details.tier-compare');
+tierCompare.addEventListener('toggle', () => {
+  document.querySelectorAll('.tieropt .info').forEach(el =>
+    el.setAttribute('aria-expanded', tierCompare.open ? 'true' : 'false'));
+});
+document.querySelectorAll('.tieropt .info').forEach(el => {
+  el.setAttribute('role', 'button');
+  el.setAttribute('aria-expanded', 'false');
+  el.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    tierCompare.open = true;
+    tierCompare.scrollIntoView({ behavior: PREFERS_REDUCED_MOTION ? 'auto' : 'smooth', block: 'nearest' });
+  });
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
+  });
+});
+document.getElementById('cleanedSteps').innerHTML = cleanedStepStrings(currentTier).map(s => `<li>${s}</li>`).join('');
+document.getElementById('kbSteps').innerHTML = kbStepStrings(currentTier).map(s => `<li>${s}</li>`).join('');
+applyTheme();
+updateBudget();
+</script>
+</body>
+</html>
