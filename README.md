@@ -1,4 +1,4 @@
-# Microsoft Copilot Agent Optimizer
+# Copilot Agent Helper
 
 A single-file, browser-based tool that cleans up Microsoft 365 Copilot agent instructions: it trims filler the model already does by default, flags reference data that belongs in a knowledge file, rewrites vague phrasing, and helps you stay under Microsoft's **8,000-character** instructions limit.
 
