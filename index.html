@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Microsoft Copilot Agent Optimizer</title>
+<title>Copilot Agent Helper</title>
 <meta name="description" content="Clean up Microsoft 365 Copilot agent instructions: trim filler, flag reference data for knowledge files, and stay under the 8,000-character limit. Runs entirely in your browser.">
-<meta property="og:title" content="Microsoft Copilot Agent Optimizer">
+<meta property="og:title" content="Copilot Agent Helper">
 <meta property="og:description" content="Paste your agent instructions; get a slimmer, sourced rewrite that stays under the 8,000-character limit.">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Microsoft Copilot Agent Optimizer">
+<meta name="twitter:title" content="Copilot Agent Helper">
 <meta name="twitter:description" content="Paste your agent instructions; get a slimmer, sourced rewrite that stays under the 8,000-character limit.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%23115ea3'/><rect x='3.5' y='4' width='9' height='1.4' rx='.7' fill='white'/><rect x='3.5' y='7.3' width='6.5' height='1.4' rx='.7' fill='white'/><rect x='3.5' y='10.6' width='8' height='1.4' rx='.7' fill='white'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -90,6 +90,7 @@
   .brand{display:flex;flex-direction:column;align-items:flex-start;gap:3px}
   .brand__name{margin:0;font-size:18px;font-weight:600;letter-spacing:-.01em}
   .brand__tag{margin:0;font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3)}
+  .brand__tagline{margin:2px 0 0;font-size:13.5px;line-height:1.45;color:var(--ink-2);max-width:none;text-wrap:balance}
   .intro{font-size:14.5px;line-height:1.55;color:var(--ink-2);margin:0 0 24px;max-width:74ch}
   .intro b{color:var(--ink);font-weight:600}
 
@@ -371,7 +372,8 @@
 
   <header class="topbar">
     <div class="brand">
-      <h1 class="brand__name">Microsoft Copilot Agent Optimizer</h1>
+      <h1 class="brand__name">Copilot Agent Helper</h1>
+      <p class="brand__tagline">Sorts your Microsoft Copilot agent's content into instructions and a knowledge file.</p>
     </div>
     <button id="themeToggle" class="themetoggle" type="button" onclick="toggleTheme()" aria-label="Switch to dark theme">
       <span id="themeIcon" aria-hidden="true"></span>
@@ -472,6 +474,7 @@
           </div>
           <textarea id="cleanedOutput" class="otext" readonly aria-labelledby="cleanedHead" placeholder="The slimmer Instructions field appears here after Analyze runs."></textarea>
           <p id="movedNote" class="ohint" style="display:none" aria-live="polite"></p>
+          <p id="fallbackNote" class="ohint" style="display:none" aria-live="polite"></p>
           <div class="nextsteps">
             <p class="nextsteps__h">What to do with this</p>
             <ol id="cleanedSteps"></ol>
@@ -649,18 +652,35 @@ function sentenceCount(text) {
 
 const URLISH = /https?:\/\/|\bwww\.[\w.-]+|[\w.+-]+@[\w-]+\.[\w.-]+|\b\d{3}[-.)\s]\s?\d{3}[-.\s]\d{4}\b/;
 
+// --- Bullet handling, robust to content pasted from Word: glyph bullets (• ▪ · etc., often
+// followed by a tab) and numbered "1." section headings that must NOT be read as list items. ---
+const BULLET_MARKER_RX = /^[ \t]*([-*]|[•▪·◦‣⁃●○■□]|\d+[.)]|\(\d+\))[ \t]+/;
+function stripBulletMarker(line) { return line.replace(BULLET_MARKER_RX, ''); }
+function bulletKind(line) {
+  const t = line.replace(/^[ \t]+/, '');
+  if (/^([-*]|[•▪·◦‣⁃●○■□])[ \t]+/.test(t)) return 'glyph';
+  if (/^(\d+[.)]|\(\d+\))[ \t]+/.test(t)) return 'num';
+  return null;
+}
+
 function isLikelyFactList(chunk) {
   const lines = chunk.split(/\n/).map(l => l.trim()).filter(Boolean);
-  const bulletLines = lines.filter(l => /^([-*•·▪]|\d+\.|\(\d+\))\s+/.test(l));
+  const bulletLines = lines.filter(l => BULLET_MARKER_RX.test(l));
   if (bulletLines.length < 3) return false;
+  // Long bullet lines read as prose (a numbered list of explanatory sentences), not reference
+  // data. Reference items are short: a name, a number, a phone, a short phrase.
+  const avgLen = bulletLines.reduce((s, l) => s + l.length, 0) / bulletLines.length;
+  if (avgLen > 140) return false;
   let dataish = 0;
   for (const l of bulletLines) {
-    if (URLISH.test(l)
-        || /\b\d/.test(l)
-        || /\b(19|20)\d{2}\b/.test(l)
-        || /[A-Z][a-z]+ [A-Z][a-z]+/.test(l)
-        || /\$\d/.test(l)
-        || /\d+%/.test(l)) {
+    const c = stripBulletMarker(l); // ignore the marker so "1." doesn't read as data
+    if (URLISH.test(c)
+        || /\b\d/.test(c)
+        || /\b(19|20)\d{2}\b/.test(c)
+        || /[A-Z][a-z]+ [A-Z][a-z]+/.test(c)
+        || /\b[A-Z]{2,}\b/.test(c)
+        || /\$\d/.test(c)
+        || /\d+%/.test(c)) {
       dataish++;
     }
   }
@@ -683,12 +703,15 @@ function looksLikeReferenceProse(chunk) {
 }
 
 function splitChunks(text) {
-  // Split on blank lines first (well-formatted input). Then segment each block so
-  // that rules separated by single newlines become their own chunks, while bulleted
-  // reference lists stay grouped (optionally with a "Heading:" line directly above
-  // them). Without this, a paste that uses single line breaks instead of blank lines
-  // collapses into one giant block and gets dumped wholesale to the knowledge file.
-  const isBullet = l => /^([-*•·▪]|\d+\.|\(\d+\))\s+/.test(l.trim());
+  // Normalize Word/Office bullet glyphs (• ▪ · etc., usually followed by a tab) to a plain
+  // "- " marker, so pasted-from-Word lists don't carry stray glyphs into the output or double
+  // up under the tool's own bullets.
+  text = text.replace(/^[ \t]*[•▪·◦‣⁃●○■□][ \t]+/gm, '- ');
+  // Split on blank lines first (well-formatted input). Then segment each block so rules
+  // separated by single newlines become their own chunks, while bulleted reference lists stay
+  // grouped (optionally with a "Heading:" line directly above them). Group only consecutive
+  // bullets of the SAME kind, so a numbered section heading ("2. Trusted news sources") isn't
+  // swallowed into a glyph-bullet list above it.
   const out = [];
   for (const block of text.split(/\n\s*\n/)) {
     const lines = block.split('\n').filter(l => l.trim() !== '');
@@ -696,11 +719,13 @@ function splitChunks(text) {
     while (i < lines.length) {
       const line = lines[i];
       const next = lines[i + 1];
-      const headerOfList = /:\s*$/.test(line.trim()) && next && isBullet(next);
-      if (isBullet(line) || headerOfList) {
+      const kind = bulletKind(line);
+      const headerKind = (!kind && /:\s*$/.test(line.trim()) && next) ? bulletKind(next) : null;
+      if (kind || headerKind) {
+        const groupKind = kind || headerKind;
         const group = [line];
         i++;
-        while (i < lines.length && isBullet(lines[i])) { group.push(lines[i]); i++; }
+        while (i < lines.length && bulletKind(lines[i]) === groupKind) { group.push(lines[i]); i++; }
         out.push(group.join('\n').replace(/^\s+|\s+$/g, ''));
       } else {
         out.push(line.replace(/^\s+|\s+$/g, ''));
@@ -901,8 +926,8 @@ function applyTightens(text) {
 
 function topicOf(chunk) {
   const colonMatch = chunk.match(/^([^:.\n]{3,80}):/);
-  if (colonMatch) return colonMatch[1].trim();
-  const firstLine = chunk.split('\n')[0];
+  if (colonMatch) return stripBulletMarker(colonMatch[1].trim()).trim() || colonMatch[1].trim();
+  const firstLine = stripBulletMarker(chunk.split('\n')[0]);
   const words = firstLine.split(/\s+/).slice(0, 6).join(' ');
   return words.replace(/[.,;]+$/, '');
 }
@@ -929,41 +954,79 @@ function rewriteChunk(chunk, result) {
   return chunk;
 }
 
-// Render one cleaned rule as a Markdown bullet. Multi-line rules (e.g. an inline
-// list kept on Basic) get their continuation lines indented 2 spaces so they stay
-// inside the bullet / nest as a sub-list.
+// Render one cleaned rule as a Markdown bullet. Continuation lines of a multi-line
+// rule (e.g. an inline reference list kept on Basic) are left flush, NOT indented:
+// the 2-space indent added +2 characters per line, which on Basic (where reference
+// data can't be offloaded) could inflate a near-limit input past 8,000 characters.
 function toBullet(text) {
   const lines = text.split('\n');
-  return lines.map((ln, i) => i === 0 ? '- ' + ln : (ln.trim() === '' ? '' : '  ' + ln)).join('\n');
+  // Don't stack a "- " on a line that's already a bullet (e.g. a normalized reference list);
+  // only a non-bulleted rule's first line gets the marker.
+  return lines.map((ln, i) => BULLET_MARKER_RX.test(ln) ? ln : (i === 0 ? '- ' + ln : ln)).join('\n');
 }
 
-function buildOutputs(chunks, results) {
+function buildOutputs(chunks, results, inputLen) {
+  // First pass: title each moved list from the nearest preceding section heading, so the
+  // knowledge file reads "## Standard phone numbers" rather than "## 911". A heading is a short
+  // single line with no sentence-ending punctuation (e.g. "1. Standard phone numbers"). A heading
+  // that becomes a section title is "claimed" so it isn't also emitted as a rule.
+  const isHeading = c => {
+    if (c.includes('\n')) return false;
+    const t = stripBulletMarker(c).trim();
+    return t.length >= 3 && t.length <= 70 && !/[.!?:]$/.test(t);
+  };
+  const topics = new Array(chunks.length).fill(null);
+  const claimedHeading = new Set();
+  let pending = -1;
+  for (let i = 0; i < chunks.length; i++) {
+    if (results[i].verdict === 'kb') {
+      if (pending >= 0 && i - pending <= 4) {
+        topics[i] = stripBulletMarker(chunks[pending]).trim();
+        claimedHeading.add(pending);
+        pending = -1;
+      } else {
+        topics[i] = topicOf(chunks[i]);
+      }
+    } else if (isHeading(chunks[i])) {
+      pending = i;
+    }
+  }
+
   const ruleParts = [];
   const movedTopics = [];
   const kbParts = [];
   for (let i = 0; i < chunks.length; i++) {
     const r = results[i];
     if (r.verdict === 'kb') {
-      const topic = topicOf(chunks[i]);
+      const topic = topics[i];
       movedTopics.push(topic);
       let body = chunks[i];
       const lines = body.split('\n');
-      // Drop the first line when the heading already says the same thing.
+      // Drop the first line when the heading already says the same thing (inline "Topic:" lists).
       if (lines[0].trim().replace(/:$/, '') === topic) body = lines.slice(1).join('\n').replace(/^\s*\n/, '');
       kbParts.push(`## ${topic}\n\n${body}`);
+    } else if (claimedHeading.has(i)) {
+      // This heading became a knowledge-file section title; don't also emit it as a rule.
+      continue;
     } else {
       const rewritten = rewriteChunk(chunks[i], r);
       if (rewritten) ruleParts.push(rewritten);
     }
   }
-  let cleaned = '';
-  if (ruleParts.length) cleaned = '# Instructions\n\n' + ruleParts.map(toBullet).join('\n');
   // The moved-topics list is surfaced to the builder as a note (#movedNote), NOT baked
   // into the pasted instructions: the agent grounds on the attached knowledge file
   // automatically, so a topic index in the instructions just spends characters it
   // doesn't need.
+  const markdown = ruleParts.length ? '# Instructions\n\n' + ruleParts.map(toBullet).join('\n') : '';
+  // Never-grow guarantee: the Markdown header + "- " bullets add characters. On a lean,
+  // near-limit input (mostly on Basic) that overhead can make the output longer than what
+  // the user pasted. If so, fall back to plain lines (no header, no bullets, single-newline
+  // joins) — same rules, nothing dropped — which is guaranteed to be no longer than the input.
+  const plain = ruleParts.join('\n');
+  const plainFallback = inputLen != null && markdown.length > inputLen;
   return {
-    cleaned: cleaned,
+    cleaned: plainFallback ? plain : markdown,
+    plainFallback: plainFallback,
     kb: kbParts.join('\n\n---\n\n'),
     kbCount: kbParts.length,
     movedTopics: movedTopics
@@ -1207,6 +1270,22 @@ function analyze() {
   }
   const results = chunks.map((c, i) => analyzeChunk(c, i, chunks));
 
+  // Input sanity: does this read like agent instructions (rules), or a document/notes? Any
+  // chunk that isn't redundant/vague/reference defaults to "keep," so a memo of prose paragraphs
+  // looks superficially fine. Real instructions are dense with directives (must/should/always/
+  // never + imperative openers). If almost none of the non-reference chunks are directive, warn.
+  let notInstructions = false;
+  if (!flattenedPaste) {
+    const ruleChunks = results.filter(r => r.verdict !== 'kb' && !r.kbBlocked);
+    if (ruleChunks.length >= 5) {
+      const directive = chunks.filter((c, i) => results[i].verdict !== 'kb' && !results[i].kbBlocked && isDirective(c)).length;
+      if (directive / ruleChunks.length < 0.3) {
+        notInstructions = true;
+        inputNotice.innerHTML = '<div class="notice notice--input notice--warn"><strong>This doesn\'t look like agent instructions.</strong> The tool is built for the rules you paste into a Copilot agent\'s Instructions field, like "Always cite the source" or "Never share another user\'s data." What you pasted reads more like a document or notes, so the results below may not be meaningful.</div>';
+      }
+    }
+  }
+
   const counts = { delete: 0, tighten: 0, advisory: 0, kb: 0, keep: 0, mixed: 0 };
   results.forEach(r => counts[r.verdict]++);
   // Advisory cross-cuts the chunk verdicts: total count of "flagged but tool won't change" bullets.
@@ -1217,7 +1296,7 @@ function analyze() {
     });
   });
 
-  const outputs = buildOutputs(chunks, results);
+  const outputs = buildOutputs(chunks, results, text.length);
 
   const negCount = (text.match(/\b(do not|don'?t|never|avoid)\b/gi) || []).length;
   const nn = document.getElementById('negativeNotice');
@@ -1239,6 +1318,14 @@ function analyze() {
     movedNote.textContent = '';
     movedNote.style.display = 'none';
   }
+  const fallbackNote = document.getElementById('fallbackNote');
+  if (outputs.plainFallback) {
+    fallbackNote.textContent = 'Kept as plain text instead of Markdown to avoid adding characters.';
+    fallbackNote.style.display = '';
+  } else {
+    fallbackNote.textContent = '';
+    fallbackNote.style.display = 'none';
+  }
   const reduction = text.length > 0 ? Math.round(100 * (1 - outputs.cleaned.length / text.length)) : 0;
   document.getElementById('cleanedStat').textContent =
     `${outputs.cleaned.length.toLocaleString()} characters · from ${text.length.toLocaleString()} · −${reduction}%`;
@@ -1256,15 +1343,31 @@ function analyze() {
 
   const ob = document.getElementById('overBudget');
   if (outputs.cleaned.length > HARD_LIMIT) {
-    const keeps = chunks
-      .map((c, i) => ({ c, i, len: c.length, v: results[i].verdict }))
-      .filter(x => x.v === 'keep')
-      .sort((a, b) => b.len - a.len)
-      .slice(0, 3);
-    const items = keeps.map(k =>
-      `<li>Part ${k.i + 1} (${k.len} characters): ${escapeHtml(k.c.slice(0, 90))}${k.c.length > 90 ? '…' : ''}</li>`
-    ).join('');
-    ob.innerHTML = `<div class="notice over"><strong>Still over the 8K hard limit after suggested cuts (${outputs.cleaned.length.toLocaleString()} characters).</strong> These survived the rules but are your longest remaining parts. Review them for tightening${noKb ? '' : ' or moving to a knowledge file'}:<ol>${items}</ol></div>`;
+    const over = outputs.cleaned.length;
+    const round = n => Math.round(n / 10) * 10;
+    // Reference data kept inline on Basic (kbBlocked) is what would move to a knowledge
+    // file on Premium, freeing those characters. Used to show the concrete Premium path.
+    const refChars = results.reduce((sum, r, i) => sum + (r.kbBlocked ? chunks[i].length : 0), 0);
+    let inner;
+    if (noKb && refChars > 0) {
+      const projected = Math.max(0, over - refChars);
+      const underAfter = projected <= HARD_LIMIT;
+      inner = `<strong>Still over the 8,000-character limit (${over.toLocaleString()}).</strong> The tool cut what it safely could. About ${round(refChars).toLocaleString()} characters of this is reference data that Basic keeps in the instructions. On Premium, that moves to a knowledge file and off your count, putting you at about ${round(projected).toLocaleString()} characters${underAfter ? ', under the 8,000 limit.' : '. You would still need to trim some of your rules to get under.'}`;
+    } else {
+      const keeps = chunks
+        .map((c, i) => ({ c, i, len: c.length, v: results[i].verdict }))
+        .filter(x => x.v === 'keep')
+        .sort((a, b) => b.len - a.len)
+        .slice(0, 3);
+      const items = keeps.map(k =>
+        `<li>Part ${k.i + 1} (${k.len} characters): ${escapeHtml(k.c.slice(0, 90))}${k.c.length > 90 ? '…' : ''}</li>`
+      ).join('');
+      const lead = noKb
+        ? `The tool cut what it safely could. The rest is genuine rules, not reference data, so it won't cut them for you. Trim or combine your longest:`
+        : `The tool cut what it safely could and moved your reference data to the knowledge file. The rest is genuine rules. Trim or combine your longest:`;
+      inner = `<strong>Still over the 8,000-character limit (${over.toLocaleString()}).</strong> ${lead}<ol>${items}</ol>`;
+    }
+    ob.innerHTML = `<div class="notice over">${inner}</div>`;
   } else {
     ob.innerHTML = '';
   }
@@ -1281,7 +1384,7 @@ function analyze() {
   const firstRun = !res.classList.contains('show');
   res.classList.add('show');
   updateBudget();
-  if (flattenedPaste) {
+  if (flattenedPaste || notInstructions) {
     // The warning sits just above the results; the normal scroll-to-results would
     // push it off-screen. Scroll to the warning instead so the user actually sees it.
     scrollToEl(inputNotice, 'start');
